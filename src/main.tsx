@@ -53,9 +53,9 @@ import { Board } from './Board';
 import { snapshot } from './snapshot';
 import {
   askGeminiDirect,
+  listGeminiModels,
   testGeminiConnection,
-  DEFAULT_GEMINI_MODEL,
-  FREE_TIER_MODELS,
+  type GeminiModelInfo,
 } from './gemini';
 import 'katex/dist/katex.min.css';
 import './style.css';
@@ -85,6 +85,8 @@ function App() {
   const [settings, setSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [models, setModels] = useState<GeminiModelInfo[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   const [keyStatus, setKeyStatus] = useState<{
     state: 'idle' | 'testing' | 'ok' | 'error';
     message: string;
@@ -109,7 +111,7 @@ function App() {
 
   const resource = lib.resources.find((r) => r.id === active);
   const currentSubject = lib.subjects.find((s) => s.id === subject) || lib.subjects[0];
-  const geminiModel = lib.prefs.geminiModel || DEFAULT_GEMINI_MODEL;
+  const geminiModel = lib.prefs.geminiModel || '';
 
   useEffect(() => {
     read()
@@ -272,6 +274,19 @@ function App() {
       setStatus('Enter your personal Gemini API key in Settings to use the AI assistant.');
       return;
     }
+    let activeModel = geminiModel;
+    if (!activeModel) {
+      try {
+        const fetched = await listGeminiModels(apiKey);
+        setModels(fetched);
+        activeModel = fetched[0].id;
+        preference('geminiModel', activeModel);
+      } catch (e: any) {
+        setSettings(true);
+        setStatus(e?.message || String(e));
+        return;
+      }
+    }
     const id = active;
     setPlaying(false);
     setBusy(true);
@@ -287,7 +302,7 @@ function App() {
       const image = await snapshot(resource, page);
       const body = await askGeminiDirect({
         apiKey,
-        model: geminiModel,
+        model: activeModel,
         message,
         context,
         history,
@@ -323,9 +338,42 @@ function App() {
     }
   }
 
+  async function handleLoadModels(): Promise<string | null> {
+    if (!apiKey.trim()) return null;
+    setLoadingModels(true);
+    setKeyStatus({ state: 'testing', message: 'Loading available Gemini models…' });
+    try {
+      const fetched = await listGeminiModels(apiKey);
+      setModels(fetched);
+      const selected =
+        fetched.some((m) => m.id === geminiModel) ? geminiModel : fetched[0].id;
+      preference('geminiModel', selected);
+      setKeyStatus({
+        state: 'idle',
+        message: '',
+      });
+      return selected;
+    } catch (e: any) {
+      setModels([]);
+      setKeyStatus({
+        state: 'error',
+        message: e?.message || String(e),
+      });
+      return null;
+    } finally {
+      setLoadingModels(false);
+    }
+  }
+
   async function handleTestKey() {
-    setKeyStatus({ state: 'testing', message: 'Testing connection…' });
-    const res = await testGeminiConnection(apiKey, geminiModel);
+    let targetModel = geminiModel;
+    if (!models.length || !models.some((m) => m.id === targetModel)) {
+      const loaded = await handleLoadModels();
+      if (!loaded) return;
+      targetModel = loaded;
+    }
+    setKeyStatus({ state: 'testing', message: `Testing ${targetModel}…` });
+    const res = await testGeminiConnection(apiKey, targetModel);
     setKeyStatus({
       state: res.ok ? 'ok' : 'error',
       message: res.message,
@@ -335,6 +383,7 @@ function App() {
   function handleRemoveKey() {
     setApiKey('');
     setShowKey(false);
+    setModels([]);
     setKeyStatus({ state: 'idle', message: '' });
   }
 
@@ -1108,16 +1157,30 @@ function App() {
               </label>
 
               <label className="field">
-                <span>Model (Free-tier compatible)</span>
+                <span>Available Model (from Gemini API)</span>
                 <select
                   value={geminiModel}
-                  onChange={(e) => preference('geminiModel', e.target.value)}
+                  disabled={!models.length}
+                  onChange={(e) => {
+                    preference('geminiModel', e.target.value);
+                    if (keyStatus.state !== 'idle') {
+                      setKeyStatus({ state: 'idle', message: '' });
+                    }
+                  }}
                 >
-                  {FREE_TIER_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
+                  {!models.length ? (
+                    <option value="">
+                      {apiKey.trim()
+                        ? 'Click "Load models" or "Test connection" to fetch available models'
+                        : 'Enter your API key first'}
                     </option>
-                  ))}
+                  ) : (
+                    models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.displayName} ({m.id})
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
 
@@ -1125,7 +1188,15 @@ function App() {
                 <button
                   type="button"
                   className="btn-secondary"
-                  disabled={!apiKey.trim() || keyStatus.state === 'testing'}
+                  disabled={!apiKey.trim() || loadingModels || keyStatus.state === 'testing'}
+                  onClick={handleLoadModels}
+                >
+                  {loadingModels ? 'Loading…' : 'Load models'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  disabled={!apiKey.trim() || loadingModels || keyStatus.state === 'testing'}
                   onClick={handleTestKey}
                 >
                   {keyStatus.state === 'testing' ? 'Testing…' : 'Test connection'}
