@@ -1,5 +1,11 @@
 # Margin — Interactive private tutor
 
+Website: https://xzthe.github.io/margin-private-tutor/
+
+Repository: https://github.com/XZTHE/margin-private-tutor
+
+GitHub Actions built, tested and deployed the static app successfully on 2026-11-26. Live Gemini teaching remains unconfigured: Kevin credentials are not located and Worker free-tier billing must be confirmed.
+
 React + TypeScript + Vite, PDF.js, SVG ink, IndexedDB, and a separately deployed Cloudflare Worker. No database, mandatory accounts, sync, or paid services. The project is independent of Kevin.
 
 ## Run locally
@@ -35,7 +41,7 @@ Vite prints the local preview URL. `dist/` is the static production build, with 
 4. Push to main. `.github/workflows/pages.yml` installs from the lockfile, runs tests/build, and deploys the `dist` artifact. A public repository is generally the free GitHub Pages route; verify account eligibility and usage rules before enabling hosting.
 5. The action reports the actual Pages URL; do not assume a URL is live before that action succeeds.
 
-This session could access the connected GitHub profile but the connector has no repository-creation or Pages-settings tool, `gh` is absent, and the Chrome GitHub session was signed out. No repository or public deployment is claimed until those steps actually complete.
+GitHub Pages is configured to deploy through GitHub Actions. The initial CI run passed all 12 automated tests and deployed successfully. Source was uploaded using the signed-in browser because the terminal Git credentials belong to another account.
 
 ## Secure free-tier Gemini proxy
 
@@ -61,7 +67,7 @@ For local Worker development, keep secrets in ignored `worker/.dev.vars` and use
 
 ## Verification
 
-Automated tests cover cross-subject isolation, command validation, playback visibility/erase behavior, and binary backup round trips. Production build is checked with TypeScript. Browser smoke testing covers library rendering, note creation, workspace controls, and IndexedDB refresh persistence. No successful Gemini response, Cloudflare deployment or GitHub Pages deployment can be verified without the missing external setup. No generated tutor responses are shown as real API results.
+Automated tests cover cross-subject isolation, command validation, playback visibility/erase behavior, and binary backup round trips. Production build is checked with TypeScript. Browser smoke testing covers library rendering, note creation, workspace controls, and IndexedDB refresh persistence. GitHub Pages deployment passed in CI and the public URL was verified. No successful Gemini response or Cloudflare deployment can be verified without the missing external setup. No generated tutor responses are shown as real API results.
 
 Manual acceptance:
 
