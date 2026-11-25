@@ -1,18 +1,95 @@
 import React from 'react';
+
 const ar: Record<string, string> = {
-    'YOUR STUDY SPACE': 'مساحتك الدراسية', 'Library': 'المكتبة', 'SUBJECTS': 'المواد', 'Create subject': 'إنشاء مادة', 'Just on this device': 'على هذا الجهاز فقط', 'Your notes stay in your browser.': 'تبقى ملاحظاتك في متصفحك.', 'Settings & backup': 'الإعدادات والنسخ الاحتياطي', 'My library': 'مكتبتي', 'Saved on this device': 'محفوظ على هذا الجهاز', 'A LITTLE FOCUS. A LOT OF POSSIBILITY.': 'قليل من التركيز، وكثير من الإمكانات.', 'Everything you need to understand what’s next.': 'كل ما تحتاجه لفهم خطوتك القادمة.', 'New note': 'ملاحظة جديدة', 'Your next “I get it” starts here.': 'تبدأ لحظة «فهمتها!» من هنا.', 'Bring your lectures, make room for your thoughts,': 'اجمع محاضراتك، وأفسح المجال لأفكارك،', 'and work through the tricky parts with your AI tutor.': 'وتعلّم الأجزاء الصعبة مع معلمك الذكي.', 'Import your first resource': 'استيراد أول مصدر', 'All resources': 'كل المصادر', 'New folder': 'مجلد جديد', 'Import': 'استيراد', 'Find a resource': 'ابحث عن مصدر', 'A fresh page': 'صفحة جديدة', 'Make space for your ideas': 'مساحة لأفكارك', 'Your resources. Your pace. Your space.': 'مصادرك. سرعتك. مساحتك.', 'Private by design · No account needed': 'خصوصية مدمجة · لا حاجة لحساب', 'Back to library': 'العودة للمكتبة', 'pen': 'قلم', 'eraser': 'ممحاة', 'text': 'نص', 'select': 'تحديد النص', 'region': 'تحديد منطقة', 'Pen color': 'لون القلم', 'Undo': 'تراجع', 'Toggle tutor sidebar': 'إظهار المعلم', 'Pencil or mouse to write · fingers to scroll': 'القلم أو الفأرة للكتابة · الأصابع للتمرير', 'Select a tool to annotate': 'اختر أداة للكتابة', 'PPTX · basic layout rendering': 'عرض شرائح PPTX بتنسيق أساسي', 'Previous page': 'الصفحة السابقة', 'Next page': 'الصفحة التالية', 'Page': 'صفحة', 'of': 'من', 'Whiteboard': 'لوحة بيضاء', 'Previous step': 'الخطوة السابقة', 'Pause': 'إيقاف مؤقت', 'Resume': 'متابعة', 'Step': 'خطوة', 'Speed': 'السرعة', 'Keep ink': 'حفظ الكتابة', 'Clear AI lesson': 'مسح الدرس', 'Your private tutor': 'معلمك الخاص', 'Close sidebar': 'إغلاق المحادثة', 'Explain': 'اشرح', 'Solve Together': 'نحل معًا', 'Practice': 'تدرّب', 'Let’s make it click.': 'لنصل إلى الفهم.', 'Ask about this page, select a region, or work through a problem together.': 'اسأل عن هذه الصفحة، أو حدد منطقة، أو نحل مسألة معًا.', 'Turn AI on when you’re ready. Your tutor only responds when you ask.': 'فعّل المعلم عندما تكون مستعدًا. يستجيب فقط عندما تسأل.', 'Uses resources from': 'يستخدم مصادر مادة', 'only.': 'فقط.', 'YOU': 'أنت', 'MARGIN TUTOR': 'المعلم', 'Preparing your lesson…': 'جارٍ إعداد درسك…', 'Paste selected document text here': 'ألصق النص المحدد هنا', 'Why this step?': 'لماذا هذه الخطوة؟', 'Explain another way': 'اشرح بطريقة أخرى', 'Message tutor': 'رسالة إلى المعلم', 'Ask for a review of your written work…': 'اطلب مراجعة حلك المكتوب…', 'What would you like to understand?': 'ماذا تريد أن تفهم؟', 'Current page + subject context': 'الصفحة الحالية وسياق المادة', 'AI is off': 'المعلم غير مفعّل', 'Working…': 'جارٍ العمل…', 'Ask tutor': 'اسأل المعلم', 'No background analysis. You’re in control.': 'لا تحليل في الخلفية. أنت المتحكم.', 'Your study settings': 'إعدادات الدراسة', 'Notes and preferences stay on this device. API credentials belong only in your Worker secrets.': 'تبقى الملاحظات والإعدادات على جهازك. يُحفظ مفتاح API فقط ضمن أسرار Worker.', 'Cloudflare Worker URL': 'رابط Cloudflare Worker', 'Private proxy access token': 'رمز الوصول الخاص', 'Session only — never saved': 'لهذه الجلسة فقط — لا يُحفظ', 'Conversation language': 'لغة المحادثة', 'Explanation language': 'لغة الشرح', 'Writing language': 'لغة الكتابة', 'Interface language': 'لغة الواجهة', 'English': 'الإنجليزية', 'Arabic': 'العربية', 'Export backup': 'تصدير نسخة احتياطية', 'Restore backup': 'استعادة نسخة احتياطية', 'Done': 'تم', 'Dismiss notification': 'إغلاق التنبيه', 'Keep a backup before clearing browser data. Imported files may contain personal information; AI requests send the relevant excerpts and current page to Google only when you ask.': 'احتفظ بنسخة احتياطية قبل مسح بيانات المتصفح. قد تحتوي ملفاتك على معلومات شخصية؛ تُرسل المقتطفات والصفحة الحالية إلى Google فقط عندما تطلب ذلك.'
+  Subjects: 'المواد',
+  'Create subject': 'إنشاء مادة',
+  'Settings & AI Key': 'الإعدادات ومفتاح الذكاء الاصطناعي',
+  Search: 'بحث',
+  Import: 'استيراد',
+  'New note': 'ملاحظة جديدة',
+  'New folder': 'مجلد جديد',
+  'New notebook': 'دفتر جديد',
+  'Back to library': 'العودة للمكتبة',
+  'Previous page': 'الصفحة السابقة',
+  'Next page': 'الصفحة التالية',
+  'Add page': 'إضافة صفحة',
+  'Zoom out': 'تصغير',
+  'Zoom in': 'تكبير',
+  'Fit to width': 'ملاءمة للعرض',
+  Whiteboard: 'لوحة بيضاء',
+  'Full screen': 'ملء الشاشة',
+  'Full screen study mode': 'وضع الدراسة بملء الشاشة',
+  'Exit full screen': 'الخروج من ملء الشاشة',
+  Settings: 'الإعدادات',
+  Pen: 'قلم',
+  Eraser: 'ممحاة',
+  Text: 'نص',
+  'Select text': 'تحديد النص',
+  'Select region': 'تحديد منطقة',
+  Undo: 'تراجع',
+  'Previous step': 'الخطوة السابقة',
+  Pause: 'إيقاف مؤقت',
+  Resume: 'متابعة',
+  'Keep ink': 'حفظ الكتابة',
+  'Clear AI lesson': 'مسح الدرس',
+  'Open AI assistant': 'فتح المساعد الذكي',
+  'AI Assistant': 'المساعد الذكي',
+  Explain: 'اشرح',
+  'Solve Together': 'نحل معًا',
+  Practice: 'تدرّب',
+  'Ask about this page, select a region, or work through a problem.':
+    'اسأل عن هذه الصفحة، أو حدد منطقة، أو نحل مسألة معًا.',
+  'Turn AI ON when you want help. No background analysis.':
+    'فعّل الذكاء الاصطناعي عندما تحتاج المساعدة. لا تحليل في الخلفية.',
+  'Add Gemini API key': 'إضافة مفتاح Gemini API',
+  'Thinking…': 'جارٍ التفكير…',
+  'Why this step?': 'لماذا هذه الخطوة؟',
+  'Explain another way': 'اشرح بطريقة أخرى',
+  'Turn AI ON to ask…': 'فعّل الذكاء الاصطناعي للسؤال…',
+  'Ask for a review of your written work…': 'اطلب مراجعة حلك المكتوب…',
+  'Ask about this page…': 'اسأل عن هذه الصفحة…',
+  'Page + subject context': 'الصفحة وسياق المادة',
+  'AI is off': 'الذكاء الاصطناعي متوقف',
+  'Working…': 'جارٍ العمل…',
+  Ask: 'اسأل',
+  'Gemini API (Bring Your Own Key)': 'واجهة Gemini API (مفتاحك الشخصي)',
+  'Get a free Gemini API key at Google AI Studio':
+    'احصل على مفتاح Gemini API مجاني من Google AI Studio',
+  'Personal Gemini API Key': 'مفتاح Gemini API الشخصي',
+  'Model (Free-tier compatible)': 'النموذج (متوافق مع الفئة المجانية)',
+  'Test connection': 'اختبار الاتصال',
+  'Testing…': 'جارٍ الاختبار…',
+  'Remove key': 'إزالة المفتاح',
+  Languages: 'اللغات',
+  Interface: 'الواجهة',
+  Conversation: 'المحادثة',
+  Explanation: 'الشرح',
+  Writing: 'الكتابة',
+  English: 'الإنجليزية',
+  Arabic: 'العربية',
+  'Local Backup': 'النسخ الاحتياطي المحلي',
+  'Export backup': 'تصدير نسخة احتياطية',
+  'Restore backup': 'استعادة نسخة احتياطية',
+  'Dismiss notification': 'إغلاق التنبيه',
 };
-function translate(s: string) { const trim = s.trim(); return ar[trim] ? s.replace(trim, ar[trim]) : s; }
-export function translateTree(node: React.ReactNode, arabic: boolean): React.ReactNode { if (!arabic)
-    return node; if (typeof node === 'string')
-    return translate(node); if (Array.isArray(node))
-    return node.map((v, i) => <React.Fragment key={i}>{translateTree(v, true)}</React.Fragment>); if (React.isValidElement(node)) {
+
+function translate(s: string) {
+  const trim = s.trim();
+  return ar[trim] ? s.replace(trim, ar[trim]) : s;
+}
+
+export function translateTree(node: React.ReactNode, arabic: boolean): React.ReactNode {
+  if (!arabic) return node;
+  if (typeof node === 'string') return translate(node);
+  if (Array.isArray(node))
+    return node.map((v, i) => <React.Fragment key={i}>{translateTree(v, true)}</React.Fragment>);
+  if (React.isValidElement(node)) {
     const props = node.props as Record<string, any>;
     const changes: Record<string, any> = {};
     for (const key of ['placeholder', 'title', 'aria-label'])
-        if (typeof props[key] === 'string')
-            changes[key] = translate(props[key]);
-    if (props.children !== undefined)
-        changes.children = translateTree(props.children, true);
+      if (typeof props[key] === 'string') changes[key] = translate(props[key]);
+    if (props.children !== undefined) changes.children = translateTree(props.children, true);
     return React.cloneElement(node, changes);
-} return node; }
+  }
+  return node;
+}

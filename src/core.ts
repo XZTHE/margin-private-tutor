@@ -48,6 +48,7 @@ export type Subject = {
 export type Prefs = {
     ui?: string;
     endpoint: string;
+    geminiModel?: string;
     conversation: string;
     explanation: string;
     writing: string;
