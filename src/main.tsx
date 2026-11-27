@@ -53,6 +53,8 @@ import { Board } from './Board';
 import { snapshot } from './snapshot';
 import {
   askGeminiDirect,
+  GeminiBillingError,
+  resumeGeminiRequests,
   listGeminiModels,
   testGeminiConnection,
   type GeminiModelInfo,
@@ -86,6 +88,7 @@ function App() {
   // Settings & BYOK Gemini API key (memory-only for current session)
   const [settings, setSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
+  const [billingBlocked, setBillingBlocked] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [models, setModels] = useState<GeminiModelInfo[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -332,6 +335,7 @@ function App() {
       setPlaying(true);
       setStatus('Lesson ready. You can pause at any step.');
     } catch (e: any) {
+      if (e instanceof GeminiBillingError) { setBillingBlocked(true); setAi(false); setSettings(true); }
       setStatus(e?.message || String(e));
     } finally {
       requestInFlight.current = false;
@@ -341,6 +345,7 @@ function App() {
 
   useEffect(() => {
     const key = apiKey.trim();
+    setBillingBlocked(false);
     setModels([]);
     if (!key) { setLoadingModels(false); return; }
     const provider = detectApiProvider(key);
@@ -1206,6 +1211,7 @@ function App() {
                 </select>
               </label>
 
+              {billingBlocked && <div role="alert" className="key-status error"><p>توقفت طلبات الذكاء الاصطناعي لأن Google أعادت HTTP 402: رصيد الدفع المسبق غير متاح. تغيير النموذج لا يحل مشكلة رصيد الحساب. راجع المشروع في AI Studio أو استخدم مشروع Free Tier مؤهلًا.</p><button type="button" className="btn-secondary" onClick={()=>{resumeGeminiRequests(apiKey);setBillingBlocked(false);setStatus('Retry allowed. Enable AI and ask once after resolving billing.');}}>حللت مشكلة الفوترة — السماح بمحاولة جديدة</button></div>}
               <div className="key-actions">
                 <button
                   type="button"

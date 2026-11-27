@@ -80,6 +80,10 @@ function extractApiErrorMessage(bodyText: string, apiKey: string): string {
   return msg;
 }
 
+const billingBlockedKeys = new Set<string>();
+export class GeminiBillingError extends Error {}
+export function resumeGeminiRequests(apiKey: string) { billingBlockedKeys.delete(apiKey.trim()); }
+
 export function classifyGeminiError(
   status: number,
   bodyText: string,
@@ -88,6 +92,9 @@ export function classifyGeminiError(
   const detail = extractApiErrorMessage(bodyText, apiKey);
   const suffix = detail ? ` — ${detail}` : '';
 
+  if (status === 402) {
+    return `Billing balance depleted (HTTP 402). Google requires a positive prepaid balance for this billing account. Changing models or creating another key in the same project will not fix it. Requests are paused; check your project billing or use an eligible Free Tier project.${suffix}`;
+  }
   if (
     status === 401 ||
     status === 403 ||
@@ -219,6 +226,7 @@ export async function askGeminiDirect(
 ): Promise<TutorResponse> {
   const trimmed = req.apiKey.trim();
   const modelId = normalizeModelId(req.model);
+  if (billingBlockedKeys.has(trimmed)) throw new GeminiBillingError('AI requests are paused after HTTP 402. Resolve project billing or use an eligible Free Tier project before explicitly allowing a retry.');
   if (!trimmed) {
     throw new Error('Add your personal Gemini API key in AI Settings to use the tutor.');
   }
@@ -300,6 +308,10 @@ export async function askGeminiDirect(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    if (res.status === 402) {
+      billingBlockedKeys.add(trimmed);
+      throw new GeminiBillingError(classifyGeminiError(res.status, text, trimmed));
+    }
     throw new Error(classifyGeminiError(res.status, text, trimmed));
   }
 
