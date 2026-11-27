@@ -50,6 +50,12 @@ import {
 } from './core';
 import { blank, importFile } from './importers';
 import { Board } from './Board';
+import { NotebookPage } from './NotebookPage';
+import { FloatingChatButton } from './FloatingChatButton';
+import { pageTurnGesture,resolveBookFold } from './book';
+import {PaperCurl,capturePaper,type CurlDriver,type PaperSnapshot} from './PaperCurl';
+import { useICloudBackup } from './icloud';
+import {shouldCompleteFold} from './curl-geometry';
 import { snapshot } from './snapshot';
 import {
   askGeminiDirect,
@@ -75,14 +81,27 @@ function App() {
   const [active, setActive] = useState('');
   const [folder, setFolder] = useState('');
   const [page, setPage] = useState(0);
+  const [curl, setCurl] = useState<PaperSnapshot|null>(null);
+  const [curlDriver,setCurlDriver]=useState<CurlDriver|null>(null);
+  const [dragTarget,setDragTarget]=useState<number|null>(null);
+  const [pendingBlank,setPendingBlank]=useState<Page|null>(null);
+  const foldDrag=useRef<{id:number|null;owner:HTMLButtonElement;newPage:Page|null;from:number;target:number;direction:1|-1;rect:DOMRect;startX:number;startY:number;lastX:number;lastTime:number;velocity:number;driver:CurlDriver}|null>(null);
+  useEffect(()=>{const up=(e:PointerEvent)=>finishFoldInput(e);const cancel=(e:PointerEvent)=>finishFoldInput(e,true);const blur=()=>{const drag=foldDrag.current;if(drag?.id!=null)finishFoldInput({pointerId:drag.id,clientX:0,clientY:0},true)};window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',cancel,true);window.addEventListener('blur',blur);return()=>{window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',cancel,true);window.removeEventListener('blur',blur)}},[]);
+  const swipeStart = useRef<{x:number;y:number;time:number}|null>(null);
   const [tool, setTool] = useState('pen');
+  const [eraserMenu,setEraserMenu]=useState(false);
+  const eraserHold=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const heldTool=useRef(false);
   const [color, setColor] = useState('#1d1d1f');
   const [zoom, setZoom] = useState(100);
+  const [fitPage,setFitPage]=useState(false);
+  const [zoomGesture,setZoomGesture]=useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
 
   // Floating AI assistant state (closed by default so document is 100% focus)
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatHidden,setChatHidden]=useState(()=>{try{return localStorage.getItem('margin-chat-hidden')==='1'}catch{return false}});
   const [chatExpanded, setChatExpanded] = useState(false);
   const [ai, setAi] = useState(false);
 
@@ -120,8 +139,10 @@ function App() {
   const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
 
   const resource = lib.resources.find((r) => r.id === active);
+  const viewPages=resource?(pendingBlank?[...resource.pages,pendingBlank]:resource.pages):[];
   const currentSubject = lib.subjects.find((s) => s.id === subject) || lib.subjects[0];
   const geminiModel = lib.prefs.geminiModel || '';
+  const cloud = useICloudBackup(lib,ready,data=>{setLib(data);setSubject(data.subjects[0]?.id||'start');setActive('');setPage(0)});
 
   useEffect(() => {
     read()
@@ -157,7 +178,9 @@ function App() {
       Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
 
     const onTouchStart = (e: TouchEvent) => {
+      if(foldDrag.current)return;
       if (e.touches.length === 2) {
+        setZoomGesture(true);
         pinchStart.current = {
           dist: getDist(e.touches[0], e.touches[1]),
           zoom,
@@ -166,6 +189,7 @@ function App() {
     };
 
     const onTouchMove = (e: TouchEvent) => {
+      if(foldDrag.current)return;
       if (e.touches.length === 2 && pinchStart.current) {
         e.preventDefault();
         const scale = getDist(e.touches[0], e.touches[1]) / pinchStart.current.dist;
@@ -176,6 +200,7 @@ function App() {
 
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) {
+        setZoomGesture(false);
         pinchStart.current = null;
       }
     };
@@ -183,10 +208,12 @@ function App() {
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
     return () => {
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
     };
   }, [resource, zoom]);
 
@@ -197,16 +224,54 @@ function App() {
     }));
   }
 
-  function updatePage(p: Page) {
+  function updatePage(p: Page, targetPage = page) {
     updateResource((r) => ({
       ...r,
-      pages: r.pages.map((v, i) => (i === page ? p : v)),
+      pages: r.pages.map((v, i) => (i === targetPage ? p : v)),
       updated: Date.now(),
     }));
   }
 
+  function navigatePage(target: number) {
+    if(target===page||foldDrag.current)return;
+    setCurlDriver(null);
+    setDragTarget(null);
+    const paper=document.getElementById('study-paper-'+page);
+    const stage=paper?.closest<HTMLElement>('.book-stage');
+    const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    setCurl(paper&&stage&&!reduce?capturePaper(paper,stage,target>page?1:-1):null);
+    setPage(target);
+    setPlaying(false);
+    setSelection('');
+    requestAnimationFrame(() => {if(scrollRef.current)scrollRef.current.scrollTop=0;});
+  }
+
+  function beginFold(e:React.PointerEvent<HTMLButtonElement>,direction:1|-1){
+    if(curl||foldDrag.current||(e.pointerType==='mouse'&&e.button!==0)||!resource)return;
+    const destination=resolveBookFold(page,resource.pages.length,resource.kind==='note',direction);if(!destination)return;
+    const target=destination.target,newPage=destination.addPage?blank():null;
+    const paper=document.getElementById('study-paper-'+page),stage=paper?.closest<HTMLElement>('.book-stage');if(!paper||!stage)return;
+    e.preventDefault();e.stopPropagation();swipeStart.current=null;
+    const snapshot=capturePaper(paper,stage,direction);if(!snapshot)return;
+    const driver:CurlDriver={point:{x:direction===1?1:0,y:1},settle:null};
+    foldDrag.current={id:e.pointerId,owner:e.currentTarget,newPage,from:page,target,direction,rect:paper.getBoundingClientRect(),startX:e.clientX,startY:e.clientY,lastX:e.clientX,lastTime:performance.now(),velocity:0,driver};
+    e.currentTarget.setPointerCapture(e.pointerId);setCurlDriver(driver);setPendingBlank(newPage);setDragTarget(target);setCurl(snapshot);setPlaying(false);setSelection('');
+  }
+  function updateFoldPosition(clientX:number,clientY:number){const drag=foldDrag.current;if(!drag)return;const now=performance.now();if(Math.abs(drag.lastX-clientX)>.5){drag.velocity=(drag.lastX-clientX)*drag.direction/Math.max(1,now-drag.lastTime);drag.lastX=clientX;drag.lastTime=now;}drag.driver.point={x:(drag.direction===1?1:0)+(clientX-drag.startX)/drag.rect.width,y:Math.min(1,1+(clientY-drag.startY)/drag.rect.height)};}
+  function moveFold(e:React.PointerEvent<HTMLButtonElement>){const drag=foldDrag.current;if(!drag||drag.id!==e.pointerId)return;e.preventDefault();e.stopPropagation();updateFoldPosition(e.clientX,e.clientY);}
+  function finishFoldInput(e:{pointerId:number;clientX:number;clientY:number;preventDefault?:()=>void;stopPropagation?:()=>void},cancel=false){const drag=foldDrag.current;if(!drag||drag.id!==e.pointerId)return;e.preventDefault?.();e.stopPropagation?.();if(!cancel)updateFoldPosition(e.clientX,e.clientY);drag.id=null;const point=drag.driver.point;const travel=drag.direction===1?1-point.x:point.x;drag.driver.settle=!cancel&&shouldCompleteFold(travel,performance.now()-drag.lastTime<120?drag.velocity:0)?1:0;try{drag.owner.releasePointerCapture(e.pointerId)}catch{}}
+
+  function finishFold(committed:boolean){const drag=foldDrag.current;if(drag&&committed){if(drag.newPage)updateResource(r=>({...r,pages:[...r.pages,drag.newPage!],updated:Date.now()}));setPage(drag.target);requestAnimationFrame(()=>{if(scrollRef.current)scrollRef.current.scrollTop=0})}foldDrag.current=null;setPendingBlank(null);setDragTarget(null);setCurlDriver(null);setCurl(null);}
+
+  function addPageFromCorner(){if(!resource||resource.kind!=='note'||foldDrag.current)return;const target=resource.pages.length;updateResource(r=>({...r,pages:[...r.pages,blank()],updated:Date.now()}));navigatePage(target);}
+
   function open(r: Resource) {
     setActive(r.id);
+    setCurl(null);
+    setCurlDriver(null);
+    setDragTarget(null);
+    setPendingBlank(null);
+    foldDrag.current=null;
     setPage(0);
     setZoom(100);
     setPlaying(false);
@@ -305,7 +370,7 @@ function App() {
     try {
       const context = retrieve(lib.resources, subject, message, active, page);
       const question = selectionRect(selection);
-      const geometry = readPageGeometry();
+      const geometry = readPageGeometry(page);
       if (question && !pinnedAnswerArea && !geometry.blocks.length && resource.kind !== 'note') throw Error('للصفحات المصورة: حدد مساحة الحل الفارغة واضغط «اكتب الحل هنا»، ثم حدد السؤال واسأل المعلم.');
       const answerArea = pinnedAnswerArea || (question ? findAnswerArea(question, [...geometry.occupied, question]) : undefined);
       if (answerArea && (answerArea.width < 220 || answerArea.height < 100)) throw Error('مساحة الحل صغيرة. حدد مستطيلًا فارغًا أكبر قبل إرسال السؤال.');
@@ -432,7 +497,7 @@ function App() {
       ? visibleCommands(lesson.commands, lesson.index + (playing || progress > 0 ? 1 : 0))
       : [];
 
-  function preference(key: string, value: string) {
+  function preference(key: string, value: string | boolean) {
     setLib((l) => ({ ...l, prefs: { ...l.prefs, [key]: value } }));
   }
 
@@ -446,10 +511,15 @@ function App() {
       a.download = 'margin-backup.json';
       a.click();
       URL.revokeObjectURL(url);
+      return true;
     } catch (e) {
       setStatus(String(e));
+      return false;
     }
   }
+
+  function hideChat(){setChatOpen(false);setChatHidden(true);try{localStorage.setItem('margin-chat-hidden','1')}catch{}}
+  function showChat(open=true){setChatHidden(false);setChatOpen(open);try{localStorage.setItem('margin-chat-hidden','0')}catch{}}
 
   function toggleAi() {
     const next = !ai;
@@ -619,8 +689,8 @@ function App() {
               {filteredResources.map((r) => (
                 <div className="doc-card" key={r.id}>
                   <button className="doc-open" onClick={() => open(r)}>
-                    <div className={'doc-thumb ' + (r.kind === 'note' ? 'note-thumb' : '')}>
-                      <FileText size={24} strokeWidth={1.5} />
+                    <div className={'doc-thumb ' + (r.kind === 'note' ? 'note-thumb ' : '') + (r.pages.length > 1 ? 'notebook-thumb' : '')}>
+                      {r.pages.length > 1 ? <span className="notebook-cover" aria-hidden="true"><span className="notebook-cover-label"><span/><span/><span/></span></span> : <FileText size={24} strokeWidth={1.5} />}
                       <span className="doc-badge">{r.kind.toUpperCase()}</span>
                     </div>
                     <div className="doc-meta">
@@ -659,7 +729,7 @@ function App() {
 
       {/* Full-Screen Document Workspace */}
       {resource && (
-        <div className={'workspace-shell ' + (fullscreen ? 'immersive' : '')}>
+        <div className={'workspace-shell ' + (fullscreen ? 'immersive ' : '') + (resource.kind==='note'||whiteboard?'notes-workspace':'')}>
           {/* Minimal Floating Top Bar (hidden in immersive mode) */}
           {!fullscreen && (
             <header className="doc-header">
@@ -682,7 +752,7 @@ function App() {
                   aria-label="Previous page"
                   disabled={page === 0}
                   onClick={() => {
-                    setPage(page - 1);
+                    navigatePage(page - 1);
                     setPlaying(false);
                     setSelection('');
                   }}
@@ -697,29 +767,19 @@ function App() {
                   aria-label="Next page"
                   disabled={page === resource.pages.length - 1}
                   onClick={() => {
-                    setPage(page + 1);
+                    navigatePage(page + 1);
                     setPlaying(false);
                     setSelection('');
                   }}
                 >
                   <ChevronRight size={17} />
                 </button>
-                {resource.kind === 'note' && (
-                  <button
-                    className="icon-btn"
-                    aria-label="Add page"
-                    title="Add page"
-                    onClick={() => {
-                      updateResource((r) => ({ ...r, pages: [...r.pages, blank()] }));
-                      setPage(resource.pages.length);
-                    }}
-                  >
-                    <Plus size={16} />
-                  </button>
-                )}
+
               </div>
 
               <div className="doc-header-right">
+                <button className="chat-access-btn" aria-label="إظهار الشات" title="إظهار الشات" onClick={()=>showChat()}><Sparkles size={16}/><span>{chatHidden?'إظهار الشات':'الشات'}</span></button>
+                {cloud.info&&<button className={'icloud-badge '+cloud.state} title="iCloud Drive backup" onClick={()=>setSettings(true)}>{cloud.state==='saving'?'iCloud · جارٍ الحفظ':cloud.state==='error'?'iCloud · تعذر الحفظ':cloud.state==='restore-first'?'iCloud · نسخة للاستعادة':cloud.state==='saved'&&cloud.enabled?'iCloud · محفوظ على الماك':cloud.enabled?'iCloud · تلقائي':'iCloud · متوقف'}</button>}
                 <div className="zoom-group">
                   <button
                     className="icon-btn"
@@ -730,8 +790,9 @@ function App() {
                   </button>
                   <button
                     className="zoom-reset"
-                    title="Fit to width"
-                    onClick={() => setZoom(100)}
+                    title={fitPage?'تكبير الورقة':'إظهار الورقة كاملة'}
+                    aria-label="تبديل حجم الورقة"
+                    onClick={() => {setFitPage(v=>!v);setZoom(100)}}
                   >
                     {zoom}%
                   </button>
@@ -786,42 +847,53 @@ function App() {
           )}
 
           {/* Full-screen paper area */}
-          <div className="paper-scroll" ref={scrollRef}>
+          <div className="paper-scroll book-scroll" ref={scrollRef} onPointerDownCapture={()=>setEraserMenu(false)}
+            onTouchStart={e=>{const t=e.touches[0] as Touch & {touchType?:string};swipeStart.current=e.touches.length===1&&t.touchType!=='stylus'&&tool!=='select'&&tool!=='text'?{x:t.clientX,y:t.clientY,time:Date.now()}:null;}}
+            onTouchMove={e=>{if(e.touches.length!==1)swipeStart.current=null;}}
+            onTouchCancel={()=>{swipeStart.current=null;}}
+            onTouchEnd={e=>{const start=swipeStart.current;swipeStart.current=null;if(!start||e.touches.length)return;const t=e.changedTouches[0];if(!t)return;const delta=pageTurnGesture(start,{x:t.clientX,y:t.clientY,time:Date.now()},zoom);const next=page+delta;if(delta&&next>=0&&next<resource.pages.length)navigatePage(next);}}>
+
             <div
-              className="paper-stage"
+              className={'paper-stage book-stage '+(curlDriver?'is-hand-folding ':'')+(zoomGesture?'is-pinching':'')}
               style={{
+                ...({'--page-zoom':zoom/100} as React.CSSProperties),
                 width: zoom === 100 ? '100%' : zoom + '%',
-                maxWidth: zoom === 100 ? '1100px' : 'none',
+                maxWidth: fitPage?`min(${860*zoom/100}px, max(180px, calc((100dvh - 240px) * ${(resource.pages[page].ratio||0.74)*zoom/100})))`:(860*zoom/100)+'px',
               }}
             >
-              <Board
-                key={resource.id + ':' + page + ':' + (whiteboard ? 'wb' : 'doc')}
-                resource={
-                  whiteboard
-                    ? {
-                        ...resource,
-                        kind: 'note',
-                        pages: resource.pages.map((p) => ({
-                          ...p,
-                          text: '',
-                          image: undefined,
-                        })),
-                      }
-                    : resource
-                }
-                page={page}
-                tool={tool}
-                color={color}
-                onPage={updatePage}
-                commands={commands}
-                progress={playing || progress > 0 ? progress : 1}
-                onSelection={setSelection}
-              />
+              <button className="book-edge book-prev" aria-label="الورقة السابقة" title="الورقة السابقة" disabled={page===0} onClick={()=>navigatePage(page-1)}><ChevronLeft size={24}/></button>
+              <button className="book-edge book-next" aria-label="الورقة التالية" title="الورقة التالية" disabled={page===resource.pages.length-1} onClick={()=>navigatePage(page+1)}><ChevronRight size={24}/></button>
+              {viewPages.map((sheet,index)=>({sheet,index})).filter(({index})=>Math.abs(index-page)<=1).map(({sheet,index}) => {return (
+                <NotebookPage key={resource.id+':'+index+':'+whiteboard} index={index} active={(dragTarget??page)===index} hidden={(dragTarget??page)!==index} preload ratio={sheet.ratio||0.74} onActivate={()=>{if(page!==index){setPage(index);setPlaying(false);setSelection('')}}}>
+                  <div className="paper-leaf-frame"><Board
+                    resource={whiteboard?{...resource,kind:'note',pages:viewPages.map(p=>({...p,text:'',image:undefined}))}:pendingBlank?{...resource,pages:viewPages}:resource}
+                    page={index}
+                    tool={tool}
+                    color={color}
+                    eraserMode={lib.prefs.eraserMode||'pixel'}
+                    onPage={next=>updatePage(next,index)}
+                    commands={resource.lesson?.page===index?visibleCommands(resource.lesson.commands,resource.lesson.index+(playing||progress>0?1:0)):[]}
+                    progress={playing||progress>0?progress:1}
+                    onSelection={setSelection}
+                  />
+                  </div>
+                </NotebookPage>
+              )})}
+              <div className="book-grab-handles" style={{aspectRatio:resource.pages[page].ratio||0.74}}>
+                {(page<resource.pages.length-1||resource.kind==='note')&&<button className={'paper-corner paper-corner-next '+(page===resource.pages.length-1?'paper-corner-add':'')} aria-label={page===resource.pages.length-1?'اطو الزاوية لإضافة ورقة جديدة':'اسحب زاوية الورقة التالية'} title={page===resource.pages.length-1?'اسحب الطيّة لإضافة ورقة':'امسك الزاوية واسحبها'} onPointerDown={e=>beginFold(e,1)} onPointerMove={moveFold} onPointerUp={e=>finishFoldInput(e)} onPointerCancel={e=>finishFoldInput(e,true)} onLostPointerCapture={e=>finishFoldInput(e,true)} onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={e=>{if(e.detail===0){if(page===resource.pages.length-1)addPageFromCorner();else navigatePage(page+1)}}}>{page===resource.pages.length-1&&<Plus size={15}/>}</button>}
+                {page>0&&<button className="paper-corner paper-corner-prev" aria-label="اسحب زاوية الورقة السابقة" title="امسك الزاوية واسحبها" onPointerDown={e=>beginFold(e,-1)} onPointerMove={moveFold} onPointerUp={e=>finishFoldInput(e)} onPointerCancel={e=>finishFoldInput(e,true)} onLostPointerCapture={e=>finishFoldInput(e,true)} onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={e=>{if(e.detail===0)navigatePage(page-1)}}/>}
+              </div>
+              {curl&&<PaperCurl key={curl.key} snapshot={curl} driver={curlDriver} onDone={finishFold}/>}
+              <div className="book-navigation"><button disabled={page===0} onClick={()=>navigatePage(page-1)}><ChevronLeft size={16}/> السابقة</button><span>الصفحة {page+1} من {resource.pages.length}</span><button disabled={page===resource.pages.length-1} onClick={()=>navigatePage(page+1)}>التالية <ChevronRight size={16}/></button></div>
+
+
             </div>
           </div>
 
           {/* Floating Drawing Toolbar */}
-          <div className="floating-toolbar" role="toolbar" aria-label="Drawing tools">
+          {fullscreen?<div className="floating-toolbar compact-tools" role="toolbar" aria-label="القلم والممحاة">
+            <button className="tool-btn" aria-label={tool==='eraser'?'استخدام القلم':'استخدام الممحاة'} title="اضغط للتبديل، أو اضغط مطولًا لاختيار نوع الممحاة" onPointerDown={()=>{heldTool.current=false;eraserHold.current=setTimeout(()=>{heldTool.current=true;setEraserMenu(true)},450)}} onPointerUp={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onPointerCancel={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onPointerLeave={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onContextMenu={e=>{e.preventDefault();setEraserMenu(v=>!v)}} onClick={()=>{if(heldTool.current){heldTool.current=false;return}setTool(tool==='eraser'?'pen':'eraser');setEraserMenu(false)}}>{tool==='eraser'?<PenLine size={22}/>:<Eraser size={22}/>}</button>
+          </div>:(<div className="floating-toolbar" role="toolbar" aria-label="Drawing tools">
             {[
               ['pen', PenLine, 'Pen'],
               ['eraser', Eraser, 'Eraser'],
@@ -834,7 +906,7 @@ function App() {
                 aria-label={label}
                 title={label}
                 className={'tool-btn ' + (tool === t ? 'active' : '')}
-                onClick={() => setTool(t)}
+                onClick={() => {if(t==='eraser'){setTool(t);setEraserMenu(v=>!v)}else{setTool(t);setEraserMenu(false)}}}
               >
                 <Icon size={17} />
               </button>
@@ -872,7 +944,8 @@ function App() {
             >
               <Undo2 size={17} />
             </button>
-          </div>
+          </div>)}
+          {eraserMenu&&<div className="eraser-options" role="group" aria-label="نوع الممحاة"><button className={(lib.prefs.eraserMode||'pixel')==='pixel'?'selected':''} onClick={()=>{preference('eraserMode','pixel');setTool('eraser');setEraserMenu(false)}}><Eraser size={17}/><span>عادية<small>تمسح الجزء الذي تمر عليه</small></span></button><button className={lib.prefs.eraserMode==='stroke'?'selected':''} onClick={()=>{preference('eraserMode','stroke');setTool('eraser');setEraserMenu(false)}}><PenLine size={17}/><span>خط كامل<small>تمسح ضربة القلم كاملة</small></span></button></div>}
 
           {/* Floating Lesson Playback Bar (only when an AI lesson is active) */}
           {lesson && (
@@ -933,17 +1006,7 @@ function App() {
             </div>
           )}
 
-          {/* Minimal Floating AI Button (when panel is closed) */}
-          {!chatOpen && (
-            <button
-              className={'floating-ai-btn ' + (ai ? 'ai-on' : '')}
-              aria-label="Open AI assistant"
-              onClick={() => setChatOpen(true)}
-            >
-              <Sparkles size={18} />
-              <span className="ai-dot" />
-            </button>
-          )}
+          {!chatOpen&&!chatHidden&&<FloatingChatButton active={ai} onOpen={()=>showChat()} onHide={hideChat}/>}
 
           {/* Compact / Expandable Floating AI Panel (never resizes the document) */}
           {chatOpen && (
@@ -954,6 +1017,7 @@ function App() {
                   <span>AI Assistant</span>
                 </div>
                 <div className="ai-panel-actions">
+                  <button className="icon-btn" aria-label="إخفاء الشات بالكامل" title="إخفاء الشات بالكامل" onClick={hideChat}><EyeOff size={15}/></button>
                   <button
                     className={'ai-switch ' + (ai ? 'on' : '')}
                     onClick={toggleAi}
@@ -1289,6 +1353,20 @@ function App() {
                     </select>
                   </label>
                 ))}
+              </div>
+            </section>
+
+            <section className="settings-section icloud-settings" dir="rtl">
+              <h3>iCloud Drive — الحفظ التلقائي</h3>
+              <p className="settings-note">نسخة احتياطية للدفاتر والملفات والكتابة والمحادثات في مجلد iCloud Drive على هذا الماك. مفتاح Gemini لا يدخل في النسخة. تعمل أثناء تشغيل الخادم المحلي؛ رفع الملف لأجهزة Apple الأخرى تتولاه مزامنة iCloud.</p>
+              <label className="icloud-switch"><input type="checkbox" checked={cloud.enabled} disabled={!cloud.info} onChange={e=>preference('icloudBackup',e.target.checked)}/> حفظ تلقائي بعد التعديلات</label>
+              <div className={'icloud-status '+cloud.state} role="status">{cloud.state==='checking'?'جارٍ فحص iCloud Drive…':cloud.state==='unavailable'?'iCloud Drive غير متاح للنسخة المحلية حاليًا':cloud.state==='restore-first'?'توجد نسخة iCloud أحدث أو أن المكتبة المحلية فارغة. استعد النسخة قبل المتابعة لتجنب استبدالها.':cloud.state==='saving'?'جارٍ الكتابة إلى مجلد iCloud Drive…':cloud.state==='error'?'تعذر النسخ الاحتياطي. الملاحظات ما زالت محفوظة محليًا.':cloud.state==='saved'?'حُفظت النسخة في مجلد iCloud Drive على الماك':cloud.enabled?'الحفظ التلقائي جاهز':'الحفظ التلقائي متوقف'}</div>
+              {cloud.info?.savedAt&&<p className="settings-note">آخر ملف محفوظ: {new Date(cloud.info.savedAt).toLocaleString()}<br/>{cloud.info.folder}</p>}
+              {cloud.error&&<p className="icloud-error">{cloud.error}</p>}
+              <div className="backup-actions">
+                <button className="btn-secondary" disabled={!cloud.info||!cloud.enabled||cloud.state==='saving'||cloud.state==='restore-first'} onClick={()=>void cloud.saveNow()}>حفظ الآن</button>
+                <button className="btn-secondary" disabled={!cloud.info?.hasBackup||cloud.state==='saving'} onClick={async()=>{if(!confirm('استبدال المكتبة المحلية بنسخة iCloud؟ سيتم تنزيل نسخة من المكتبة الحالية أولًا.'))return;try{if(!await download())return;await cloud.restore();setStatus('تمت استعادة نسخة iCloud.')}catch(e){setStatus(String(e))}}}>استعادة من iCloud</button>
+                {cloud.info?.hasPrevious&&<button className="btn-secondary" disabled={cloud.state==='saving'} onClick={async()=>{if(!confirm('استعادة النسخة السابقة من iCloud؟ سيتم تنزيل نسخة محلية أولًا.'))return;try{if(!await download())return;await cloud.restore(true);setStatus('تمت استعادة النسخة السابقة.')}catch(e){setStatus(String(e))}}}>النسخة السابقة</button>}
               </div>
             </section>
 

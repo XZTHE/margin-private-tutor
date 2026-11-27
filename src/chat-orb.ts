@@ -1,0 +1,1 @@
+export function clampOrbPosition(position:{x:number;y:number},width:number,height:number){return{x:Math.max(10,Math.min(Math.max(10,width-66),Number.isFinite(position.x)?position.x:10)),y:Math.max(10,Math.min(Math.max(10,height-66),Number.isFinite(position.y)?position.y:10))}}

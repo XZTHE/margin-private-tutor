@@ -1,0 +1,2 @@
+export function pageTurnGesture(start:{x:number;y:number;time:number},end:{x:number;y:number;time:number},zoom:number):-1|0|1{const dx=end.x-start.x,dy=end.y-start.y;if(zoom>100||end.time-start.time>800||Math.abs(dx)<80||Math.abs(dy)>Math.abs(dx)*.45)return 0;return dx<0?1:-1}
+export function resolveBookFold(page:number,count:number,canAdd:boolean,direction:1|-1){const target=page+direction;if(target<0||target>count||target===count&&(!canAdd||direction!==1))return null;return{target,addPage:target===count}}

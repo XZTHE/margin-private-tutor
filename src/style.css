@@ -384,6 +384,14 @@ p {
   background: #faf9f5;
 }
 
+.doc-thumb.notebook-thumb{background:linear-gradient(145deg,#f2f0e9,#e6e9e7);perspective:600px}
+.notebook-cover{position:relative;display:block;width:82px;height:112px;border:1px solid #567774;border-radius:3px 8px 8px 3px;background:linear-gradient(90deg,#45635f 0 9px,#6d9089 10px,#789d94 16px,#73988f 100%);box-shadow:2px 2px 0 #fffdf5,3px 3px 0 #b5bcb4,4px 4px 0 #fffdf5,5px 5px 0 #b5bcb4,6px 6px 0 #fffdf5,7px 7px 0 #567774,9px 12px 14px #334b4326;transform:rotate(-6deg);transition:transform .2s ease}
+.doc-open:hover .notebook-cover{transform:rotate(-3deg) translateY(-2px)}
+.notebook-cover-label{position:absolute;left:24px;right:13px;top:25px;height:37px;border:1px solid #ffffff65;border-radius:3px;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:8px}
+.notebook-cover-label span{height:1px;background:#ffffff85;width:100%}
+.notebook-cover-label span:last-child{width:65%}
+@media(prefers-reduced-motion:reduce){.notebook-cover{transition:none}}
+
 .doc-badge {
   position: absolute;
   bottom: 8px;
@@ -1354,3 +1362,100 @@ p {
     grid-template-columns: 1fr;
   }
 }
+/* Local notebook: individual sheets, generous gutters and a quiet paper surface. */
+.paper-scroll{background:#e9edf1;padding:30px 26px 110px;scroll-behavior:smooth;scroll-padding-top:24px;background-image:radial-gradient(#cbd3dc55 .7px,transparent .7px);background-size:7px 7px}
+.paper-stage{position:relative;padding-left:26px}
+.notebook-sheet{position:relative;margin:0 0 30px;scroll-margin-top:24px;padding:0 0 6px}
+.sheet-label{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;padding:0 4px;color:#7b8796;font-size:11px;letter-spacing:1.5px}
+.sheet-label span:last-child{letter-spacing:0;font-size:12px}
+.notebook-sheet .paper{border-radius:3px 9px 9px 3px;border:1px solid #d7dce1;box-shadow:0 2px 2px #52607012,0 8px 22px #52607019,3px 3px 0 -1px #fff,4px 4px 0 -1px #d6dce3,6px 6px 0 -2px #fff}
+.notebook-sheet .paper::after{content:'';pointer-events:none;position:absolute;inset:0;background:linear-gradient(90deg,#5060700c,transparent 26px);z-index:2}
+.notebook-sheet .ruled{padding:46px 40px 36px 84px;background-color:#fffefa;background-image:linear-gradient(90deg,transparent 65px,#df9c9c77 65px,#df9c9c77 66px,transparent 66px),repeating-linear-gradient(transparent 0,transparent 33px,#abc7dc60 34px,transparent 35px)}
+.notebook-sheet .note-heading{background:#fffefa;font-family:Georgia,'Times New Roman',serif;font-size:25px;font-weight:400;color:#43556b;padding-bottom:16px}
+.sheet-footer{display:flex;justify-content:center;font:italic 13px Georgia,serif;color:#8793a2;padding-top:15px}
+.notebook-binding{position:absolute;top:38px;bottom:100px;left:6px;width:15px;border-radius:6px;background:repeating-linear-gradient(to bottom,transparent 0,transparent 22px,#8c99a9 22px,#c1cbd6 25px,#758396 28px,transparent 28px,transparent 46px);pointer-events:none}
+.notebook-add-page{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:20px;border:1px dashed #aab7c6;border-radius:9px;color:#52677e;background:#ffffff60}
+.workspace-shell.immersive .paper-scroll{padding:24px 22px 100px}
+@media(max-width:600px){.paper-scroll{padding:16px 10px 96px}.paper-stage{padding-left:15px}.notebook-binding{left:0;width:10px}.notebook-sheet{margin-bottom:22px}.sheet-label{font-size:10px}.workspace-shell.immersive .paper-scroll{padding:14px 8px 90px}}
+/* Single-leaf book: the page stays fixed while a light sheet turns above it. */
+.book-scroll{background:#e7e9ec;background-image:none;padding:26px 78px 110px;isolation:isolate}
+.book-stage{padding-left:0;perspective:1800px}
+.book-stage .notebook-sheet{margin-bottom:0;padding-bottom:0}
+.book-stage .sheet-label{color:#7c8087;font-size:11px;padding:0 8px}
+.book-stage .sheet-label span:last-child{display:none}
+.book-stage .paper{border:1px solid #dededb;border-radius:3px 7px 7px 3px;box-shadow:-7px 0 14px -8px #3f41484a,0 10px 32px #3b40451b,4px 1px 0 -1px #fafaf8,5px 1px 0 -1px #d6d7d4,8px 2px 0 -2px #fafaf8,9px 2px 0 -2px #d6d7d4}
+.book-stage .paper::after{background:linear-gradient(90deg,#67615b10,transparent 32px,transparent 98%,#67615b07)}
+.book-stage .sheet-footer{font-style:normal;font-size:12px;padding-top:14px}
+.book-edge{position:absolute;top:min(45vh,40%);height:52px;width:40px;border-radius:24px;background:#ffffff90;color:#6d727a;z-index:4;box-shadow:0 1px 5px #353a4010;transition:background .15s,opacity .15s}
+.book-edge:hover{background:#fff}.book-edge:disabled{opacity:.18}
+.book-prev{left:-58px}.book-next{right:-58px}
+.book-navigation{display:flex;justify-content:center;align-items:center;gap:22px;font-size:12px;color:#737981;padding:18px 0 12px}
+.book-navigation button{font-size:12px;padding:8px}
+.book-stage .notebook-add-page{width:auto;margin:7px auto 0;padding:10px 20px;border:1px solid #cdd1d6;border-radius:20px;background:#ffffff75;font-size:12px}
+.workspace-shell.immersive .book-scroll{padding:24px 70px 100px}
+@media(max-width:600px){.book-scroll{padding:20px 21px 96px}.book-stage{padding-left:0}.book-edge{width:28px;height:44px;background:#ffffffbb}.book-prev{left:-19px}.book-next{right:-19px}.book-navigation{gap:12px;font-size:11px}.book-navigation button{padding:8px 0}.workspace-shell.immersive .book-scroll{padding:16px 20px 90px}}
+@media(prefers-reduced-motion:reduce){.paper-curl-scene{display:none}.book-scroll{scroll-behavior:auto}}
+.icloud-settings .settings-note{line-height:1.9}.icloud-switch{display:flex;gap:10px;align-items:center;font-size:14px;margin:18px 0}.icloud-switch input{width:18px;height:18px;accent-color:#357960}.icloud-status{font-size:13px;line-height:1.8;padding:12px 14px;background:#edf4ef;color:#34624b;border-radius:8px}.icloud-status.error,.icloud-status.unavailable,.icloud-status.restore-first{background:#fff4e7;color:#8e5a22}.icloud-error{font-size:12px;color:#a34838;overflow-wrap:anywhere;margin-top:10px}.icloud-badge{font-size:11px;border-radius:14px;background:#edf5f0;color:#3f7154;padding:7px 10px;white-space:nowrap}.icloud-badge.error,.icloud-badge.restore-first{background:#fff0de;color:#8a5c27}@media(max-width:700px){.icloud-badge{font-size:0;padding:6px}.icloud-badge::after{content:'iCloud';font-size:10px}.icloud-settings .backup-actions{flex-wrap:wrap}}
+
+/* Geometric page fold. The outgoing page is clipped and its reverse is reflected
+   across the moving crease; the actual document and its ink remain untouched. */
+.paper-leaf-frame{position:relative}
+.paper-corner{position:absolute;bottom:0;width:48px;height:48px;padding:0;border:0;z-index:3;opacity:.65;transition:width .2s,height .2s,opacity .2s;filter:drop-shadow(-2px -2px 2px #70675b18)}
+.paper-corner-next{right:0;clip-path:polygon(100% 0,100% 100%,0 100%);background:linear-gradient(135deg,transparent 46%,#a8a197 49%,#efebe2 53%,#fffdf8 76%,#e1dbcf)}
+.paper-corner-prev{left:0;clip-path:polygon(0 0,100% 100%,0 100%);background:linear-gradient(225deg,transparent 46%,#a8a197 49%,#efebe2 53%,#fffdf8 76%,#e1dbcf)}
+.paper-corner:hover{width:64px;height:64px;opacity:1}
+.paper-curl-scene{position:absolute;left:0;right:0;z-index:6;pointer-events:none;user-select:none;overflow:hidden;contain:layout paint;isolation:isolate}
+.curl-front,.curl-back,.curl-page-copy,.curl-back-paper,.curl-back-light,.curl-shadow,.curl-crease{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.curl-front{z-index:2;will-change:clip-path}
+.curl-back{z-index:3;transform-origin:0 0;will-change:clip-path,transform;filter:drop-shadow(3px 6px 8px #3e352c4d)}
+.curl-back-paper{background:linear-gradient(108deg,#e8e2d6,#fffdf7 14%,#f8f4eb 62%,#cfc6b6 92%,#f8f3e7);z-index:0}
+.curl-back-light{background:linear-gradient(105deg,#ffffff00 55%,#7d705b12 80%,#ffffffb0 96%);z-index:2}
+.curl-page-copy{margin:0!important;padding:0!important}
+.curl-page-copy>.paper{height:100%!important;width:100%!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important}
+.curl-page-copy>.paper::after{display:none}
+.curl-ghost-ink{opacity:var(--curl-ink-opacity,.13);mix-blend-mode:multiply;z-index:1}
+.curl-shadow{z-index:1;overflow:visible}.curl-crease{z-index:4;overflow:visible}
+@media(prefers-reduced-motion:reduce){.paper-curl-scene{display:none}.paper-corner{transition:none}}
+/* The hand controls the fold. Only the corner owns this gesture; ink stays separate. */
+.book-grab-handles{position:absolute;top:27px;left:0;right:0;pointer-events:none;z-index:8}
+.book-grab-handles .paper-corner{pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab;width:62px;height:62px;transition:opacity .12s}
+.book-grab-handles .paper-corner:active{cursor:grabbing;opacity:1}
+.book-stage.is-hand-folding .book-grab-handles .paper-corner{width:62px;height:62px;opacity:0}
+.book-stage.is-hand-folding .ink-layer{pointer-events:none}
+.curl-back{filter:none}
+.curl-ghost-ink{opacity:.12}
+.notebook-sheet[hidden]{display:none!important}
+@media(max-width:600px){.book-grab-handles .paper-corner{width:54px;height:54px}}
+@media(prefers-reduced-motion:reduce){.book-stage.is-hand-folding .paper-curl-scene{display:block}}
+.book-stage.is-hand-folding .notebook-sheet{pointer-events:none}
+.chat-access-btn{display:flex;align-items:center;gap:6px;border:1px solid #e2e5ea;border-radius:16px;padding:7px 10px;font-size:12px;color:#526578;background:#f7f9fb;white-space:nowrap}
+.chat-orb{position:fixed;z-index:25;width:52px;height:52px;touch-action:none}
+.chat-orb .movable-chat-orb{position:absolute!important;inset:0!important;width:52px;height:52px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;transition:box-shadow .15s}
+.chat-orb .movable-chat-orb:hover{transform:none}.chat-orb .movable-chat-orb:active{cursor:grabbing;box-shadow:0 7px 24px #24364c35}
+.chat-orb-hide{position:absolute;right:-6px;top:-6px;width:21px;height:21px;padding:0;z-index:2;border-radius:50%;border:1px solid #d8dee5;background:#fff;color:#7c8794;box-shadow:0 1px 4px #25384a18}
+@media(max-width:820px){.chat-access-btn span{display:none}.chat-access-btn{padding:8px}}
+
+.floating-toolbar.compact-tools{width:52px;min-width:52px;height:52px;padding:5px;border-radius:50%;gap:0}.compact-tools .tool-btn{width:42px;height:42px;border-radius:50%;touch-action:manipulation}
+.eraser-options{position:fixed;bottom:86px;left:50%;transform:translateX(-50%);z-index:32;display:flex;gap:6px;padding:8px;background:#fffffff5;border:1px solid #dce2e8;border-radius:14px;box-shadow:0 7px 25px #28384a22;backdrop-filter:blur(12px);direction:rtl}.eraser-options button{display:flex;gap:10px;padding:12px 15px;border-radius:9px;font-size:13px;white-space:nowrap;text-align:right}.eraser-options button.selected{background:#e8f0f8;color:#285b90}.eraser-options small{display:block;font-size:10px;color:#8b95a0;margin-top:5px}
+@media(max-width:820px){.zoom-group{display:flex!important;gap:1px}.zoom-group .icon-btn{width:27px;height:30px}.zoom-reset{font-size:11px;padding:0 3px}.doc-header-right{gap:3px}.eraser-options button{padding:10px;font-size:12px}.eraser-options small{font-size:9px}}
+/* An immersive note is the writing surface itself, without the outer book gutter. */
+.workspace-shell.immersive .book-scroll{padding:0;background:#fff;scroll-padding-top:0}
+.workspace-shell.immersive .book-stage{width:100%!important;max-width:none!important;margin:0}
+.workspace-shell.immersive .sheet-label,.workspace-shell.immersive .sheet-footer,.workspace-shell.immersive .book-navigation{display:none}
+.workspace-shell.immersive .notebook-sheet{margin:0;padding:0}
+.workspace-shell.immersive .book-stage .paper{border:0;border-radius:0;box-shadow:none}
+.workspace-shell.notes-workspace.immersive .paper{aspect-ratio:auto!important;height:100dvh}
+.workspace-shell.immersive .book-grab-handles{top:0}
+.workspace-shell.notes-workspace.immersive .book-grab-handles{height:100dvh;aspect-ratio:auto!important}
+.workspace-shell.immersive .book-prev{left:8px}.workspace-shell.immersive .book-next{right:8px}
+.paper-corner-add svg{position:absolute;right:11px;bottom:11px;color:#6a7787;pointer-events:none}
+@media(max-width:600px){.paper-corner-add svg{right:8px;bottom:8px}}
+/* Buttons animate the paper size; a live pinch always follows the fingers directly. */
+.book-scroll{display:block}
+.book-stage{transition:width 260ms cubic-bezier(.2,.75,.25,1),max-width 260ms cubic-bezier(.2,.75,.25,1)}
+.workspace-shell.immersive .book-stage{width:calc(100% * var(--page-zoom,1))!important}
+.workspace-shell.notes-workspace.immersive .paper{height:calc(100dvh * var(--page-zoom,1));transition:height 260ms cubic-bezier(.2,.75,.25,1)}
+.workspace-shell.notes-workspace.immersive .book-grab-handles{height:calc(100dvh * var(--page-zoom,1));transition:height 260ms cubic-bezier(.2,.75,.25,1)}
+.book-stage.is-pinching,.book-stage.is-pinching .paper,.book-stage.is-pinching .book-grab-handles{transition:none!important}
+@media(prefers-reduced-motion:reduce){.book-stage,.workspace-shell.notes-workspace.immersive .paper,.workspace-shell.notes-workspace.immersive .book-grab-handles{transition:none}}
+.workspace-shell.immersive .book-stage{margin:0 auto}

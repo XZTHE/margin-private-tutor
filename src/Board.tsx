@@ -3,6 +3,7 @@ import katex from 'katex';
 import type { Command, Page, Resource, Stroke } from './core';
 import { TextLayer } from 'pdfjs-dist';
 import { pdfDocument } from './importers';
+import {eraseInkSweep,type EraserMode} from './eraser';
 
 interface BoardProps {
   resource: Resource;
@@ -10,6 +11,7 @@ interface BoardProps {
   tool: string;
   color: string;
   penWidth?: number;
+  eraserMode?: EraserMode;
   onPage: (p: Page) => void;
   commands: Command[];
   progress: number;
@@ -22,6 +24,7 @@ export function Board({
   tool,
   color,
   penWidth = 2.5,
+  eraserMode = 'pixel',
   onPage,
   commands,
   progress,
@@ -37,6 +40,7 @@ export function Board({
   const [error, setError] = useState('');
 
   // Refs to avoid stale closures and unreliable e.buttons on iPad Safari
+  const eraserLast=useRef<[number,number]|null>(null);
   const activePointerId = useRef<number | null>(null);
   const draftRef = useRef<Stroke | null>(null);
   const regionRef = useRef<number[][]>([]);
@@ -134,23 +138,28 @@ export function Board({
     };
   }, [tool]);
 
-  function getNormalizedPoint(e: React.PointerEvent<SVGSVGElement>): [number, number] {
+  function getNormalizedPoint(e: {clientX:number;clientY:number}): [number, number] {
     const r = svg.current!.getBoundingClientRect();
     const x = Math.max(0, Math.min(1000, ((e.clientX - r.left) / r.width) * 1000));
     const y = Math.max(0, Math.min(1000, ((e.clientY - r.top) / r.height) * 1000));
     return [x, y];
   }
 
-  function eraseAt(pt: [number, number]) {
+  function emitPage(next: Page) {
+    // Update immediately: another stroke may finish before React rerenders.
+    pageRef.current = next;
+    onPage(next);
+  }
+
+  function eraseAt(pt: [number, number], from = pt) {
     const cur = pageRef.current;
-    const nextStrokes = cur.strokes.filter(
-      (s) => !s.points.some((v) => Math.hypot(v[0] - pt[0], v[1] - pt[1]) < 22)
-    );
+    const rect=svg.current!.getBoundingClientRect();
+    const nextStrokes=eraseInkSweep(cur.strokes,from,pt,14/rect.width*1000,eraserMode,rect.height/rect.width);
     const nextCommands = cur.commands.filter(
       (c) => Math.hypot(c.x - pt[0], c.y - pt[1]) > 50
     );
-    if (nextStrokes.length !== cur.strokes.length || nextCommands.length !== cur.commands.length) {
-      onPage({ ...cur, strokes: nextStrokes, commands: nextCommands });
+    if (nextStrokes.length !== cur.strokes.length || nextStrokes.some((s,i)=>s!==cur.strokes[i]) || nextCommands.length !== cur.commands.length) {
+      emitPage({ ...cur, strokes: nextStrokes, commands: nextCommands });
     }
   }
 
@@ -190,13 +199,14 @@ export function Board({
       regionRef.current = nextRegion;
       setRegion(nextRegion);
     } else if (tool === 'eraser') {
+      eraserLast.current=pt;
       eraseAt(pt);
     } else if (tool === 'text') {
       activePointerId.current = null;
       const text = prompt('Add text');
       if (text) {
         const cur = pageRef.current;
-        onPage({
+        emitPage({
           ...cur,
           commands: [
             ...cur.commands,
@@ -222,9 +232,11 @@ export function Board({
     const pt = getNormalizedPoint(e);
 
     if (draftRef.current) {
+      const samples = e.nativeEvent.getCoalescedEvents?.() || [];
+      const points = samples.length ? samples.map(getNormalizedPoint) : [pt];
       const updated: Stroke = {
         ...draftRef.current,
-        points: [...draftRef.current.points, pt],
+        points: [...draftRef.current.points, ...points],
       };
       draftRef.current = updated;
       setDraft(updated);
@@ -233,13 +245,15 @@ export function Board({
       regionRef.current = updated;
       setRegion(updated);
     } else if (tool === 'eraser') {
-      eraseAt(pt);
+      eraseAt(pt,eraserLast.current||pt);
+      eraserLast.current=pt;
     }
   }
 
   function finishPointer(e: React.PointerEvent<SVGSVGElement>) {
     if (activePointerId.current === null || e.pointerId !== activePointerId.current) return;
     activePointerId.current = null;
+    eraserLast.current=null;
 
     try {
       if (svg.current?.hasPointerCapture(e.pointerId)) {
@@ -250,11 +264,16 @@ export function Board({
     }
 
     if (draftRef.current) {
-      const finished = draftRef.current;
+      let finished = draftRef.current;
+      if (e.type === 'pointerup') {
+        const end = getNormalizedPoint(e);
+        const last = finished.points[finished.points.length - 1];
+        if (!last || Math.hypot(end[0]-last[0],end[1]-last[1]) > 0.1) finished={...finished,points:[...finished.points,end]};
+      }
       draftRef.current = null;
       setDraft(null);
       const cur = pageRef.current;
-      onPage({ ...cur, strokes: [...cur.strokes, finished] });
+      if (!cur.strokes.some(s => s.id === finished.id)) emitPage({ ...cur, strokes: [...cur.strokes, finished] });
     }
 
     if (regionRef.current.length === 2) {
@@ -272,12 +291,9 @@ export function Board({
   }
 
   function cancelPointer(e: React.PointerEvent<SVGSVGElement>) {
-    if (activePointerId.current !== e.pointerId) return;
-    activePointerId.current = null;
-    draftRef.current = null;
-    regionRef.current = [];
-    setDraft(null);
-    setRegion([]);
+    // Safari can cancel a Pencil gesture when touch/scroll takes over.
+    // Preserve the visible stroke instead of discarding the student's work.
+    finishPointer(e);
   }
 
   const all = [...p.commands, ...commands];
@@ -285,7 +301,7 @@ export function Board({
   return (
     <div
       className="paper"
-      id="study-paper"
+      id={'study-paper-'+page}
       style={{ aspectRatio: p.ratio || 0.74 }}
       onMouseUp={() => {
         if (tool === 'select') {
@@ -293,7 +309,7 @@ export function Board({
           const text = selected?.toString();
           if (text && selected?.rangeCount) {
             const r = selected.getRangeAt(0).getBoundingClientRect();
-            const paper = document.getElementById('study-paper')!.getBoundingClientRect();
+            const paper = svg.current!.parentElement!.getBoundingClientRect();
             onSelection(`Selected region: x=${Math.max(0,Math.round((r.left-paper.left)/paper.width*1000))}, y=${Math.max(0,Math.round((r.top-paper.top)/paper.height*1000))}, width=${Math.round(r.width/paper.width*1000)}, height=${Math.round(r.height/paper.height*1000)}\nSelected text: ${text.slice(0,5000)}`);
           }
         }
@@ -312,9 +328,7 @@ export function Board({
           <img src={p.image} alt={resource.name} draggable={false} />
         ) : (
           <div className={resource.kind === 'note' ? 'ruled' : 'slide-text'}>
-            {resource.kind === 'note' ? (
-              <div className="note-heading">{resource.name}</div>
-            ) : (
+            {resource.kind !== 'note' && (
               <>
                 <small>SLIDE {page + 1} · TEXT VIEW</small>
                 <pre>{p.text}</pre>
@@ -337,7 +351,7 @@ export function Board({
       >
         <defs>
           <marker
-            id="teacherArrow"
+            id={'teacherArrow-'+page}
             markerWidth="10"
             markerHeight="8"
             refX="8"
@@ -350,7 +364,7 @@ export function Board({
         {[...p.strokes, ...(draft ? [draft] : [])].map((s) => (
           <polyline
             key={s.id}
-            points={s.points.map((pt) => pt.join(',')).join(' ')}
+            points={(s.points.length===1?[s.points[0],[s.points[0][0]+0.05,s.points[0][1]+0.05]]:s.points).map((pt) => pt.join(',')).join(' ')}
             stroke={s.color}
             strokeWidth={s.width}
             fill="none"
@@ -389,7 +403,7 @@ export function Board({
                   y1={c.y}
                   x2={c.x + (c.x2 - c.x) * (i === all.length - 1 ? progress : 1)}
                   y2={c.y + (c.y2 - c.y) * (i === all.length - 1 ? progress : 1)}
-                  markerEnd={c.type === 'draw_arrow' ? 'url(#teacherArrow)' : undefined}
+                  markerEnd={c.type === 'draw_arrow' ? `url(#teacherArrow-${page})` : undefined}
                   stroke="#0a7ea4"
                   strokeWidth="3"
                 />

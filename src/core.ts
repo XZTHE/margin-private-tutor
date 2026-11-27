@@ -47,6 +47,8 @@ export type Subject = {
 };
 export type Prefs = {
     ui?: string;
+    icloudBackup?: boolean;
+    eraserMode?: 'pixel'|'stroke';
     endpoint: string;
     geminiModel?: string;
     conversation: string;
@@ -67,7 +69,9 @@ export function retrieve(resources: Resource[], subject: string, query: string, 
 export { validateCommands } from './core-validation';
 import { validateCommands } from './core-validation';
 export function visibleCommands(commands: Command[], index: number) { return commands.slice(0, index).filter((c, _, all) => c.type !== 'erase_element' && !all.some(e => e.type === 'erase_element' && e.text === c.id)); }
-export async function exportLibrary(data: Library) { const resources = await Promise.all(data.resources.map(async (r) => ({ ...r, data: r.data ? btoa(Array.from(new Uint8Array(r.data), b => String.fromCharCode(b)).join('')) : undefined }))); return JSON.stringify({ version: 1, ...data, resources }); }
+const encodedFiles = new WeakMap<ArrayBuffer,string>();
+function encodeFile(data:ArrayBuffer){const cached=encodedFiles.get(data);if(cached!==undefined)return cached;const bytes=new Uint8Array(data);let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));const result=btoa(binary);encodedFiles.set(data,result);return result}
+export async function exportLibrary(data: Library) { const resources = data.resources.map(r=>({...r,data:r.data?encodeFile(r.data):undefined})); return JSON.stringify({ version: 1, ...data, resources }); }
 export function importLibrary(raw: string): Library { const d = JSON.parse(raw); if (d.version !== 1 || !Array.isArray(d.subjects) || !Array.isArray(d.resources) || !d.prefs)
     throw Error('Not a Margin backup'); for (const s of d.subjects)
     if (typeof s.id !== 'string' || typeof s.name !== 'string' || !Array.isArray(s.folders))

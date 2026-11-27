@@ -1,5 +1,5 @@
 import type { Resource } from './core';
-export async function snapshot(resource: Resource, page: number): Promise<string> { const p = resource.pages[page]; const source = document.querySelector('#study-paper canvas') as HTMLCanvasElement | null; const c = document.createElement('canvas'); c.width = 900; c.height = Math.min(1500, 900 / (p.ratio || .74)); const ctx = c.getContext('2d')!; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height); if (source)
+export async function snapshot(resource: Resource, page: number): Promise<string> { const p = resource.pages[page]; const source = document.querySelector('#study-paper-'+page+' canvas') as HTMLCanvasElement | null; const c = document.createElement('canvas'); c.width = 900; c.height = Math.min(1500, 900 / (p.ratio || .74)); const ctx = c.getContext('2d')!; ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height); if (source)
     ctx.drawImage(source, 0, 0, c.width, c.height);
 else if (p.image) {
     const img = new Image();
