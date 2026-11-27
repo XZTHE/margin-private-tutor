@@ -1,0 +1,4 @@
+import type {GeminiModelInfo} from './gemini';
+// Prefixes are hints only. Google confirms the key through its models endpoint.
+export function detectApiProvider(key:string):'gemini'|'other'|'unknown'{const value=key.trim();if(/^(AIza|AQ\.)/.test(value))return 'gemini';if(/^(sk-|gsk_|xai-)/.test(value))return 'other';return 'unknown'}
+export function selectEconomyModel(models:GeminiModelInfo[]):string{const candidates=models.filter(m=>/gemini.*flash/i.test(m.id)&&!/(image|audio|tts|live|robotic|computer-use|experimental|exp-)/i.test(m.id));candidates.sort((a,b)=>{const score=(id:string)=>(/lite/i.test(id)?0:10)+(/preview|latest/i.test(id)?1:0);return score(a.id)-score(b.id)||b.id.localeCompare(a.id,undefined,{numeric:true})});if(!candidates.length)throw Error('No economical Gemini Flash model found. Select a model manually; no generation request was made.');return candidates[0].id}

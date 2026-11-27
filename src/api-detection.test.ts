@@ -1,0 +1,3 @@
+import{it,expect}from'vitest';import{detectApiProvider,selectEconomyModel}from'./api-detection';
+it('recognizes Google key formats without probing other providers',()=>{expect(detectApiProvider(' AIza-test ')).toBe('gemini');expect(detectApiProvider('AQ.test')).toBe('gemini');expect(detectApiProvider('sk-example')).toBe('other');expect(detectApiProvider('unrecognized')).toBe('unknown')});
+it('prefers stable text Flash-Lite and excludes image generation',()=>{const models=['gemini-3.8-pro','gemini-3.5-flash-lite-image','gemini-3.5-flash-lite-preview','gemini-3.5-flash-lite','gemini-3.8-flash'].map(id=>({id,displayName:id}));expect(selectEconomyModel(models)).toBe('gemini-3.5-flash-lite');expect(()=>selectEconomyModel([{id:'gemini-pro',displayName:'Pro'}])).toThrow()});

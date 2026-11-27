@@ -61,6 +61,8 @@ import 'katex/dist/katex.min.css';
 import './style.css';
 import { translateTree } from './i18n';
 
+import {detectApiProvider, selectEconomyModel} from './api-detection';
+
 const INK_COLORS = ['#1d1d1f', '#007aff', '#d70015', '#248a3d', '#8944ab'];
 
 function App() {
@@ -271,14 +273,14 @@ function App() {
   }, [playing, resource?.lesson?.index, speed, active]);
 
   async function ask(message = query) {
-    if (!resource || !ai || busy || requestInFlight.current || !message.trim()) return;
+    if (!resource || !ai || busy || loadingModels || requestInFlight.current || !message.trim()) return;
     if (!apiKey.trim()) {
       setSettings(true);
       setStatus('Enter your personal Gemini API key in Settings to use the AI assistant.');
       return;
     }
     let activeModel = geminiModel;
-    if (!activeModel) {
+    if (!activeModel || !models.some(m => m.id === activeModel)) {
       setSettings(true);
       setStatus('Select a Gemini model in Settings first. Prefer a Flash-Lite model for lower usage.');
       return;
@@ -337,8 +339,39 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const key = apiKey.trim();
+    setModels([]);
+    if (!key) { setLoadingModels(false); return; }
+    const provider = detectApiProvider(key);
+    if (provider !== 'gemini') {
+      setLoadingModels(false);
+      setKeyStatus({state:'error',message:provider==='other'
+        ? 'This appears to be another provider’s key. This app currently supports Gemini only; your key was not sent anywhere.'
+        : 'Provider not recognized. Automatic detection supports Gemini AIza / AQ. keys. Your key was not sent anywhere.'});
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setLoadingModels(true);
+    setKeyStatus({state:'testing',message:'Detecting Gemini and choosing an economical model…'});
+    const timer = setTimeout(async () => {
+      try {
+        const available = await listGeminiModels(key, fetch, controller.signal);
+        if (cancelled) return;
+        setModels(available);
+        const selected = selectEconomyModel(available);
+        preference('geminiModel', selected);
+        setKeyStatus({state:'ok',message:`Gemini detected · ${selected} selected. No text generation was used to check the key.`});
+      } catch (e:any) {
+        if (!cancelled) setKeyStatus({state:'error',message:e?.message||String(e)});
+      } finally { if (!cancelled) setLoadingModels(false); }
+    }, 1000);
+    return () => {cancelled=true;clearTimeout(timer);controller.abort();};
+  }, [apiKey]);
+
   async function handleLoadModels(): Promise<string | null> {
-    if (!apiKey.trim()) return null;
+    if (detectApiProvider(apiKey) !== 'gemini') return null;
     setLoadingModels(true);
     setKeyStatus({ state: 'testing', message: 'Loading available Gemini models…' });
     try {
@@ -348,8 +381,8 @@ function App() {
         fetched.some((m) => m.id === geminiModel) ? geminiModel : fetched[0].id;
       preference('geminiModel', selected);
       setKeyStatus({
-        state: 'idle',
-        message: '',
+        state: 'ok',
+        message: `Gemini key verified · ${selected}. No generation request was made.`,
       });
       return selected;
     } catch (e: any) {
@@ -365,18 +398,7 @@ function App() {
   }
 
   async function handleTestKey() {
-    let targetModel = geminiModel;
-    if (!models.length || !models.some((m) => m.id === targetModel)) {
-      const loaded = await handleLoadModels();
-      if (!loaded) return;
-      targetModel = loaded;
-    }
-    setKeyStatus({ state: 'testing', message: `Testing ${targetModel}…` });
-    const res = await testGeminiConnection(apiKey, targetModel);
-    setKeyStatus({
-      state: res.ok ? 'ok' : 'error',
-      message: res.message,
-    });
+    await handleLoadModels();
   }
 
   function handleRemoveKey() {
@@ -1112,10 +1134,10 @@ function App() {
             </div>
 
             <section className="settings-section">
-              <h3>Gemini API (Bring Your Own Key)</h3>
+              <h3>API key · automatic Gemini detection</h3>
               <p className="settings-note">
                 Enter your personal Gemini API key to use the AI assistant directly over
-                HTTPS. Your key is kept in memory for this session only and is never saved
+                HTTPS. Paste the key; Gemini and an economical model are detected automatically. Other providers are not contacted. Your key is kept in memory for this session only and is never saved
                 to browser storage, logs, URLs, or backups.
               </p>
 
@@ -1171,7 +1193,7 @@ function App() {
                   {!models.length ? (
                     <option value="">
                       {apiKey.trim()
-                        ? 'Click "Load models" or "Test connection" to fetch available models'
+                        ? 'Detecting provider and models automatically…'
                         : 'Enter your API key first'}
                     </option>
                   ) : (
@@ -1199,7 +1221,7 @@ function App() {
                   disabled={!apiKey.trim() || loadingModels || keyStatus.state === 'testing'}
                   onClick={handleTestKey}
                 >
-                  {keyStatus.state === 'testing' ? 'Testing…' : 'Test connection'}
+                  {keyStatus.state === 'testing' ? 'Checking…' : 'Check key (no generation)'}
                 </button>
                 {apiKey && (
                   <button

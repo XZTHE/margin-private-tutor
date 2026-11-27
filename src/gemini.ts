@@ -110,7 +110,8 @@ export function classifyGeminiError(
  */
 export async function listGeminiModels(
   apiKey: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<GeminiModelInfo[]> {
   const trimmed = apiKey.trim();
   if (!trimmed) {
@@ -121,6 +122,7 @@ export async function listGeminiModels(
   try {
     res = await fetchImpl(`${GEMINI_API_BASE}/models?pageSize=100`, {
       method: 'GET',
+      signal,
       headers: {
         'x-goog-api-key': trimmed,
       },
