@@ -63,6 +63,7 @@ import 'katex/dist/katex.min.css';
 import './style.css';
 import { translateTree } from './i18n';
 
+import {selectionRect,findAnswerArea,fitAnswerCommands,readPageGeometry,compactPageLayout,type Rect} from './placement';
 import {detectApiProvider, selectEconomyModel} from './api-detection';
 
 const INK_COLORS = ['#1d1d1f', '#007aff', '#d70015', '#248a3d', '#8944ab'];
@@ -99,6 +100,7 @@ function App() {
 
   const [query, setQuery] = useState('');
   const [selection, setSelection] = useState('');
+  const [pinnedAnswerArea, setPinnedAnswerArea] = useState<Rect>();
   const [busy, setBusy] = useState(false);
   const [attachPage, setAttachPage] = useState(false);
   const requestInFlight = useRef(false);
@@ -109,6 +111,7 @@ function App() {
   const [progress, setProgress] = useState(1);
   const [search, setSearch] = useState('');
   const [whiteboard, setWhiteboard] = useState(false);
+  useEffect(() => {setPinnedAnswerArea(undefined);}, [active, page, whiteboard]);
 
   const files = useRef<HTMLInputElement>(null);
   const backup = useRef<HTMLInputElement>(null);
@@ -301,6 +304,12 @@ function App() {
     }));
     try {
       const context = retrieve(lib.resources, subject, message, active, page);
+      const question = selectionRect(selection);
+      const geometry = readPageGeometry();
+      if (question && !pinnedAnswerArea && !geometry.blocks.length && resource.kind !== 'note') throw Error('للصفحات المصورة: حدد مساحة الحل الفارغة واضغط «اكتب الحل هنا»، ثم حدد السؤال واسأل المعلم.');
+      const answerArea = pinnedAnswerArea || (question ? findAnswerArea(question, [...geometry.occupied, question]) : undefined);
+      if (answerArea && (answerArea.width < 220 || answerArea.height < 100)) throw Error('مساحة الحل صغيرة. حدد مستطيلًا فارغًا أكبر قبل إرسال السؤال.');
+      if (question && !answerArea) throw Error('لا توجد مساحة كافية قرب السؤال. حدد مساحة أخرى أو افتح اللوحة البيضاء قبل طلب الحل.');
       const needsImage = attachPage || mode === 'Practice' || (!resource.pages[page].text.trim() && resource.kind !== 'note');
       const image = needsImage ? await snapshot(resource, page) : undefined;
       const body = await askGeminiDirect({
@@ -312,6 +321,9 @@ function App() {
         mode,
         languages: lib.prefs,
         selection,
+        questionRegion: question,
+        answerArea,
+        pageLayout: compactPageLayout(geometry.blocks, question),
         lessonProgress: resource.lesson,
         currentPage: page + 1,
         currentFile: resource.name,
@@ -319,6 +331,7 @@ function App() {
         studentWork: mode === 'Practice' ? resource.pages[page].strokes : undefined,
         signal: abort.current.signal,
       });
+      const placedCommands = fitAnswerCommands(body.commands, answerArea);
       setLib((l) => ({
         ...l,
         resources: l.resources.map((r) =>
@@ -326,7 +339,7 @@ function App() {
             ? {
                 ...r,
                 chat: [...r.chat, { role: 'tutor', text: body.reply }],
-                lesson: { commands: body.commands, index: 0, page },
+                lesson: { commands: placedCommands, index: 0, page },
               }
             : r
         ),
@@ -1017,6 +1030,8 @@ function App() {
                 </div>
               )}
 
+              {selectionRect(selection) && <button type="button" className="btn-secondary btn-sm" onClick={()=>{setPinnedAnswerArea(selectionRect(selection));setSelection('');setStatus('تم تثبيت مساحة الحل. حدد السؤال الآن أو اكتبه في المحادثة.');}}>اكتب الحل هنا (المساحة المحددة)</button>}
+              {pinnedAnswerArea && <div className="ai-selection"><span>مساحة الحل مثبتة في هذه الصفحة</span><button type="button" onClick={()=>setPinnedAnswerArea(undefined)}>إلغاء</button></div>}
               <div className="quick-prompts">
                 <button
                   disabled={!ai || busy}

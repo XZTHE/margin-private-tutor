@@ -289,8 +289,13 @@ export function Board({
       style={{ aspectRatio: p.ratio || 0.74 }}
       onMouseUp={() => {
         if (tool === 'select') {
-          const text = window.getSelection()?.toString();
-          if (text) onSelection(text.slice(0, 6000));
+          const selected = window.getSelection();
+          const text = selected?.toString();
+          if (text && selected?.rangeCount) {
+            const r = selected.getRangeAt(0).getBoundingClientRect();
+            const paper = document.getElementById('study-paper')!.getBoundingClientRect();
+            onSelection(`Selected region: x=${Math.max(0,Math.round((r.left-paper.left)/paper.width*1000))}, y=${Math.max(0,Math.round((r.top-paper.top)/paper.height*1000))}, width=${Math.round(r.width/paper.width*1000)}, height=${Math.round(r.height/paper.height*1000)}\nSelected text: ${text.slice(0,5000)}`);
+          }
         }
       }}
     >
@@ -361,13 +366,13 @@ export function Board({
           return (
             <g key={c.id} className="teacher-ink">
               {c.type === 'write_text' || c.type === 'explain_step' ? (
-                <foreignObject x={c.x} y={c.y} width={950 - c.x} height="180">
+                <foreignObject x={c.x} y={c.y} width={c.x2>c.x?c.x2-c.x:Math.max(100,950-c.x)} height={c.y2>c.y?c.y2-c.y:180}>
                   <div className="written" dir="auto">
                     {text}
                   </div>
                 </foreignObject>
               ) : c.type === 'write_equation' ? (
-                <foreignObject x={c.x} y={c.y} width={950 - c.x} height="120">
+                <foreignObject x={c.x} y={c.y} width={c.x2>c.x?c.x2-c.x:Math.max(100,950-c.x)} height={c.y2>c.y?c.y2-c.y:120}>
                   <div
                     className="equation"
                     dangerouslySetInnerHTML={{
