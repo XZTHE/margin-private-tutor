@@ -95,6 +95,8 @@ function App() {
   const [query, setQuery] = useState('');
   const [selection, setSelection] = useState('');
   const [busy, setBusy] = useState(false);
+  const [attachPage, setAttachPage] = useState(false);
+  const requestInFlight = useRef(false);
   const [status, setStatus] = useState('');
   const [mode, setMode] = useState('Explain');
   const [playing, setPlaying] = useState(false);
@@ -237,6 +239,7 @@ function App() {
     } catch (e) {
       setStatus(String(e));
     } finally {
+      requestInFlight.current = false;
       setBusy(false);
     }
   }
@@ -268,7 +271,7 @@ function App() {
   }, [playing, resource?.lesson?.index, speed, active]);
 
   async function ask(message = query) {
-    if (!resource || !ai || busy || !message.trim()) return;
+    if (!resource || !ai || busy || requestInFlight.current || !message.trim()) return;
     if (!apiKey.trim()) {
       setSettings(true);
       setStatus('Enter your personal Gemini API key in Settings to use the AI assistant.');
@@ -276,30 +279,25 @@ function App() {
     }
     let activeModel = geminiModel;
     if (!activeModel) {
-      try {
-        const fetched = await listGeminiModels(apiKey);
-        setModels(fetched);
-        activeModel = fetched[0].id;
-        preference('geminiModel', activeModel);
-      } catch (e: any) {
-        setSettings(true);
-        setStatus(e?.message || String(e));
-        return;
-      }
+      setSettings(true);
+      setStatus('Select a Gemini model in Settings first. Prefer a Flash-Lite model for lower usage.');
+      return;
     }
+    requestInFlight.current = true;
     const id = active;
     setPlaying(false);
     setBusy(true);
     setQuery('');
     abort.current = new AbortController();
-    const history = resource.chat.slice(-6);
+    const history = resource.chat.slice(-2);
     updateResource((r) => ({
       ...r,
       chat: [...r.chat, { role: 'student', text: message }],
     }));
     try {
       const context = retrieve(lib.resources, subject, message, active, page);
-      const image = await snapshot(resource, page);
+      const needsImage = attachPage || mode === 'Practice' || (!resource.pages[page].text.trim() && resource.kind !== 'note');
+      const image = needsImage ? await snapshot(resource, page) : undefined;
       const body = await askGeminiDirect({
         apiKey,
         model: activeModel,
@@ -334,6 +332,7 @@ function App() {
     } catch (e: any) {
       setStatus(e?.message || String(e));
     } finally {
+      requestInFlight.current = false;
       setBusy(false);
     }
   }
@@ -1036,8 +1035,9 @@ function App() {
                   aria-label="Message AI assistant"
                   rows={2}
                 />
+                <label style={{display:'flex',gap:8,fontSize:12,alignItems:'center',padding:'8px 0'}}><input type="checkbox" checked={attachPage} onChange={e=>setAttachPage(e.target.checked)}/> إرفاق صورة الصفحة (استهلاك أعلى؛ تلقائي لمراجعة الحل والصور)</label>
                 <div className="ai-form-footer">
-                  <small>{ai ? 'Page + subject context' : 'AI is off'}</small>
+                  <small>{ai ? 'Economy mode · limited context' : 'AI is off'}</small>
                   <button
                     className="btn-primary btn-sm"
                     disabled={!ai || busy || !query.trim()}
