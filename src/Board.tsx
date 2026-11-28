@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {inkPath} from './ink-path';
 import katex from 'katex';
 import type { Command, Page, Resource, Stroke } from './core';
 import { TextLayer } from 'pdfjs-dist';
 import { pdfDocument } from './importers';
 import {eraseInkSweep,type EraserMode} from './eraser';
+
+const InkStroke=memo(function InkStroke({stroke}:{stroke:Stroke}){
+  return <path d={inkPath(stroke.points,stroke.smoothing)} stroke={stroke.color} strokeWidth={stroke.width} fill="none" strokeLinecap="round" strokeLinejoin="round"/>;
+});
 
 interface BoardProps {
   resource: Resource;
@@ -12,6 +17,8 @@ interface BoardProps {
   color: string;
   penWidth?: number;
   eraserMode?: EraserMode;
+  eraserSize?: number;
+  penSmoothing?: number;
   onPage: (p: Page) => void;
   commands: Command[];
   progress: number;
@@ -25,6 +32,8 @@ export function Board({
   color,
   penWidth = 2.5,
   eraserMode = 'pixel',
+  eraserSize = 28,
+  penSmoothing = .35,
   onPage,
   commands,
   progress,
@@ -35,7 +44,18 @@ export function Board({
   const textLayer = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
 
-  const [draft, setDraft] = useState<Stroke | null>(null);
+  const liveInk=useRef<SVGPathElement>(null);
+  const inkFrame=useRef(0);
+  useEffect(()=>()=>cancelAnimationFrame(inkFrame.current),[]);
+  useLayoutEffect(()=>{if(!draftRef.current)liveInk.current?.setAttribute('d','');});
+  function paintInk(){
+    const stroke=draftRef.current,el=liveInk.current;
+    if(!stroke||!el)return;
+    el.setAttribute('d',inkPath(stroke.points,stroke.smoothing));
+    el.setAttribute('stroke',stroke.color);
+    el.setAttribute('stroke-width',String(stroke.width));
+  }
+  function scheduleInk(){if(!inkFrame.current)inkFrame.current=requestAnimationFrame(()=>{inkFrame.current=0;paintInk();});}
   const [region, setRegion] = useState<number[][]>([]);
   const [error, setError] = useState('');
 
@@ -138,8 +158,7 @@ export function Board({
     };
   }, [tool]);
 
-  function getNormalizedPoint(e: {clientX:number;clientY:number}): [number, number] {
-    const r = svg.current!.getBoundingClientRect();
+  function getNormalizedPoint(e: {clientX:number;clientY:number}, r=svg.current!.getBoundingClientRect()): [number, number] {
     const x = Math.max(0, Math.min(1000, ((e.clientX - r.left) / r.width) * 1000));
     const y = Math.max(0, Math.min(1000, ((e.clientY - r.top) / r.height) * 1000));
     return [x, y];
@@ -154,7 +173,7 @@ export function Board({
   function eraseAt(pt: [number, number], from = pt) {
     const cur = pageRef.current;
     const rect=svg.current!.getBoundingClientRect();
-    const nextStrokes=eraseInkSweep(cur.strokes,from,pt,14/rect.width*1000,eraserMode,rect.height/rect.width);
+    const nextStrokes=eraseInkSweep(cur.strokes,from,pt,eraserSize/2/rect.width*1000,eraserMode,rect.height/rect.width);
     const nextCommands = cur.commands.filter(
       (c) => Math.hypot(c.x - pt[0], c.y - pt[1]) > 50
     );
@@ -184,16 +203,17 @@ export function Board({
     if (tool === 'pen') {
       const pressureWidth =
         e.pointerType === 'pen' && e.pressure > 0
-          ? Math.max(1.2, Math.min(7, e.pressure * penWidth * 2))
+          ? Math.max(penWidth*.45, Math.min(penWidth*2, e.pressure * penWidth * 2))
           : penWidth;
       const stroke: Stroke = {
         id: crypto.randomUUID(),
         points: [pt],
         width: pressureWidth,
+        smoothing:penSmoothing,
         color,
       };
       draftRef.current = stroke;
-      setDraft(stroke);
+      paintInk();
     } else if (tool === 'region') {
       const nextRegion = [pt, pt];
       regionRef.current = nextRegion;
@@ -233,13 +253,13 @@ export function Board({
 
     if (draftRef.current) {
       const samples = e.nativeEvent.getCoalescedEvents?.() || [];
-      const points = samples.length ? samples.map(getNormalizedPoint) : [pt];
-      const updated: Stroke = {
-        ...draftRef.current,
-        points: [...draftRef.current.points, ...points],
-      };
-      draftRef.current = updated;
-      setDraft(updated);
+      const rect=svg.current!.getBoundingClientRect();
+      for(const sample of samples.length?samples:[e]){
+        const point=getNormalizedPoint(sample,rect);
+        const points=draftRef.current.points,last=points[points.length-1];
+        if(!last||Math.hypot(point[0]-last[0],point[1]-last[1])>.05)points.push(point);
+      }
+      scheduleInk();
     } else if (regionRef.current.length) {
       const updated = [regionRef.current[0], pt];
       regionRef.current = updated;
@@ -271,7 +291,7 @@ export function Board({
         if (!last || Math.hypot(end[0]-last[0],end[1]-last[1]) > 0.1) finished={...finished,points:[...finished.points,end]};
       }
       draftRef.current = null;
-      setDraft(null);
+      cancelAnimationFrame(inkFrame.current);inkFrame.current=0;
       const cur = pageRef.current;
       if (!cur.strokes.some(s => s.id === finished.id)) emitPage({ ...cur, strokes: [...cur.strokes, finished] });
     }
@@ -361,17 +381,8 @@ export function Board({
             <path d="M0 0 L10 4 L0 8 Z" fill="#0a7ea4" />
           </marker>
         </defs>
-        {[...p.strokes, ...(draft ? [draft] : [])].map((s) => (
-          <polyline
-            key={s.id}
-            points={(s.points.length===1?[s.points[0],[s.points[0][0]+0.05,s.points[0][1]+0.05]]:s.points).map((pt) => pt.join(',')).join(' ')}
-            stroke={s.color}
-            strokeWidth={s.width}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
+        {p.strokes.map(s=><InkStroke key={s.id} stroke={s}/>)}
+        <path ref={liveInk} fill="none" strokeLinecap="round" strokeLinejoin="round" pointerEvents="none"/>
         {all.map((c, i) => {
           const text =
             i === all.length - 1

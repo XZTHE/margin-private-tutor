@@ -89,6 +89,17 @@ The Vite development server can save an automatic backup to `iCloud Drive/Margin
 
 Open Settings → **iCloud Drive — الحفظ التلقائي** to see the last file write, pause backup, save now, or restore the latest/previous version. Changes are debounced for three seconds; unchanged snapshots are not rewritten. The existing browser IndexedDB copy remains in use. The backup contains subjects, imported source files, notes/ink, conversations, preferences and lesson progress. Gemini credentials remain session-only and are omitted from backup preferences.
 
-The file is written atomically, with `library.previous.json` retaining the previous successful snapshot. Revision checks reject stale tabs instead of replacing a newer backup. A newer cloud file or an empty browser library prompts restoration rather than automatic overwrite. Missing iCloud access, full storage and permission errors are shown in Settings. The app can verify writing the local iCloud Drive file; it cannot confirm Apple's server-side upload completion. Keep **Sync this Mac** enabled and enough iCloud storage available. No storage plan upgrades are activated.
+The file is written atomically, with `library.previous.json` retaining the previous successful snapshot. Revision checks reject stale tabs instead of replacing a newer backup. An empty browser library on the local Mac restores the saved backup automatically. An existing library with a newer cloud file prompts restoration rather than automatic overwrite. Missing iCloud access, full storage and permission errors are shown in Settings. The app can verify writing the local iCloud Drive file; it cannot confirm Apple's server-side upload completion. Keep **Sync this Mac** enabled and enough iCloud storage available. No storage plan upgrades are activated.
 
 This feature does not provide live automatic library synchronization to an iPad browser. After Apple uploads the file, it can be accessed through Files → iCloud Drive and imported as a Margin backup when needed. The local Mac server must remain running for further automatic backups.
+
+## CloudKit cross-device sync (requires app configuration)
+
+The optional CloudKit connector uses Apple's hosted CloudKit JS and the signed-in user's **private** database. It is disabled until configured; the local Mac Drive backup remains a separate feature. It has not been verified against a live container without the owner's Apple developer configuration.
+
+1. Create a CloudKit container, enable web services, and issue an origin-restricted **web API token** in Apple's CloudKit Console. Do not use a server private key in the website.
+2. Create record type `MarginLibrary` with field `backup` of type Asset. Deploy the schema for production usage.
+3. Copy `.env.example` to `.env.local` and provide `VITE_CLOUDKIT_CONTAINER`, `VITE_CLOUDKIT_API_TOKEN`, and `VITE_CLOUDKIT_ENVIRONMENT` (`development` or `production`). Restart Vite. These web identifiers are bundled into the client; restrict token origins to the site's actual URLs.
+4. Open Settings → iCloud — مزامنة الأجهزة and connect with the same Apple account on each device. Each device must run this version of the app; an older published build does not gain this feature automatically.
+
+The connector uploads a credential-free library JSON as an Asset after a three-second debounce, checks for changes every 30 seconds while visible and on focus, and uses record change tags to reject concurrent overwrites. Initial empty libraries download the existing cloud snapshot. Divergent libraries stop with a conflict and offer downloading the local copy before explicitly loading the cloud library. It does not automatically merge conflicting edits, replace local documents, or publish the app.

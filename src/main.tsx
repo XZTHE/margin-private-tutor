@@ -12,6 +12,7 @@ import {
   Type,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Settings,
   Download,
@@ -50,11 +51,16 @@ import {
 } from './core';
 import { blank, importFile } from './importers';
 import { Board } from './Board';
+import {inkPath} from './ink-path';
 import { NotebookPage } from './NotebookPage';
+import { PaperZoom } from './PaperZoom';
 import { FloatingChatButton } from './FloatingChatButton';
+import { FloatingToolButton } from './FloatingToolButton';
 import { pageTurnGesture,resolveBookFold } from './book';
 import {PaperCurl,capturePaper,type CurlDriver,type PaperSnapshot} from './PaperCurl';
 import { useICloudBackup } from './icloud';
+import {useCloudSync} from './useCloudSync';
+import {cloudKitConfigured} from './cloudkit';
 import {shouldCompleteFold} from './curl-geometry';
 import { snapshot } from './snapshot';
 import {
@@ -76,6 +82,18 @@ const INK_COLORS = ['#1d1d1f', '#007aff', '#d70015', '#248a3d', '#8944ab'];
 
 function App() {
   const [lib, setLib] = useState<Library>(initial);
+  useEffect(()=>{
+    const blockInterfaceSelection=(event:Event)=>{
+      const target=event.target;
+      if(target instanceof Element&&!target.closest('.paper,input,textarea,[contenteditable="true"]'))event.preventDefault();
+    };
+    document.addEventListener('contextmenu',blockInterfaceSelection);
+    document.addEventListener('selectstart',blockInterfaceSelection);
+    return()=>{
+      document.removeEventListener('contextmenu',blockInterfaceSelection);
+      document.removeEventListener('selectstart',blockInterfaceSelection);
+    };
+  },[]);
   const [ready, setReady] = useState(false);
   const [subject, setSubject] = useState('start');
   const [active, setActive] = useState('');
@@ -89,10 +107,9 @@ function App() {
   useEffect(()=>{const up=(e:PointerEvent)=>finishFoldInput(e);const cancel=(e:PointerEvent)=>finishFoldInput(e,true);const blur=()=>{const drag=foldDrag.current;if(drag?.id!=null)finishFoldInput({pointerId:drag.id,clientX:0,clientY:0},true)};window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',cancel,true);window.addEventListener('blur',blur);return()=>{window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',cancel,true);window.removeEventListener('blur',blur)}},[]);
   const swipeStart = useRef<{x:number;y:number;time:number}|null>(null);
   const [tool, setTool] = useState('pen');
-  const [eraserMenu,setEraserMenu]=useState(false);
-  const eraserHold=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const heldTool=useRef(false);
-  const [color, setColor] = useState('#1d1d1f');
+  const [toolMenu,setToolMenu]=useState<'pen'|'eraser'|null>(null);
+  const color=lib.prefs.penColor||'#1d1d1f';
+  const setColor=(value:string)=>preference('penColor',value);
   const [zoom, setZoom] = useState(100);
   const [fitPage,setFitPage]=useState(false);
   const [zoomGesture,setZoomGesture]=useState(false);
@@ -136,13 +153,16 @@ function App() {
   const backup = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pinchStart = useRef<{ dist: number; zoom: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  const pinchStart = useRef<{ dist: number; zoom: number; x: number; y: number } | null>(null);
 
   const resource = lib.resources.find((r) => r.id === active);
   const viewPages=resource?(pendingBlank?[...resource.pages,pendingBlank]:resource.pages):[];
   const currentSubject = lib.subjects.find((s) => s.id === subject) || lib.subjects[0];
   const geminiModel = lib.prefs.geminiModel || '';
   const cloud = useICloudBackup(lib,ready,data=>{setLib(data);setSubject(data.subjects[0]?.id||'start');setActive('');setPage(0)});
+  const cloudSync=useCloudSync(lib,data=>{setLib(data);setSubject(data.subjects[0]?.id||'start');setActive('');setPage(0)});
 
   useEffect(() => {
     read()
@@ -169,53 +189,67 @@ function App() {
     return () => clearTimeout(t);
   }, [lib, ready]);
 
-  // Pinch-to-zoom support on the document scroll container
+  // Own two-finger gestures so Safari never zooms the surrounding interface.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !resource) return;
-
-    const getDist = (t1: Touch, t2: Touch) =>
-      Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-
+    if (!el || !active) return;
+    let frame = 0;
+    const getDist = (a: Touch, b: Touch) => Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+    const stopNativeZoom = (e: Event) => { if(e.cancelable)e.preventDefault(); };
+    const stopMultiTouch = (e: TouchEvent) => {if(e.touches.length>1)stopNativeZoom(e);};
     const onTouchStart = (e: TouchEvent) => {
-      if(foldDrag.current)return;
-      if (e.touches.length === 2) {
-        setZoomGesture(true);
-        pinchStart.current = {
-          dist: getDist(e.touches[0], e.touches[1]),
-          zoom,
-        };
-      }
+      if(foldDrag.current || e.touches.length!==2)return;
+      stopNativeZoom(e);
+      const a=e.touches[0],b=e.touches[1];
+      const paper=el.querySelector<HTMLElement>('.notebook-sheet:not([hidden]) .paper');
+      if(!paper)return;
+      const rect=paper.getBoundingClientRect();
+      setZoomGesture(true);
+      pinchStart.current={dist:Math.max(1,getDist(a,b)),zoom:zoomRef.current,
+        x:((a.clientX+b.clientX)/2-rect.left)/rect.width,
+        y:((a.clientY+b.clientY)/2-rect.top)/rect.height};
     };
-
     const onTouchMove = (e: TouchEvent) => {
-      if(foldDrag.current)return;
-      if (e.touches.length === 2 && pinchStart.current) {
-        e.preventDefault();
-        const scale = getDist(e.touches[0], e.touches[1]) / pinchStart.current.dist;
-        const next = Math.round(Math.max(50, Math.min(250, pinchStart.current.zoom * scale)));
-        setZoom(next);
-      }
+      const start=pinchStart.current;
+      if(!start || e.touches.length!==2)return;
+      stopNativeZoom(e);
+      const a=e.touches[0],b=e.touches[1];
+      const next=Math.max(50,Math.min(250,start.zoom*getDist(a,b)/start.dist));
+      const center={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2};
+      zoomRef.current=next;
+      setZoom(next);
+      cancelAnimationFrame(frame);
+      frame=requestAnimationFrame(()=>{
+        const paper=el.querySelector<HTMLElement>('.notebook-sheet:not([hidden]) .paper');
+        if(!paper)return;
+        const rect=paper.getBoundingClientRect();
+        el.scrollLeft+=rect.left+start.x*rect.width-center.x;
+        el.scrollTop+=rect.top+start.y*rect.height-center.y;
+      });
     };
-
     const onTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) {
-        setZoomGesture(false);
-        pinchStart.current = null;
-      }
+      if(e.touches.length<2){setZoomGesture(false);pinchStart.current=null;}
     };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
-      el.removeEventListener('touchcancel', onTouchEnd);
+    el.addEventListener('touchstart',onTouchStart,{passive:false,capture:true});
+    el.addEventListener('touchmove',onTouchMove,{passive:false,capture:true});
+    el.addEventListener('touchend',onTouchEnd);
+    el.addEventListener('touchcancel',onTouchEnd);
+    document.addEventListener('touchstart',stopMultiTouch,{passive:false,capture:true});
+    document.addEventListener('touchmove',stopMultiTouch,{passive:false,capture:true});
+    document.addEventListener('gesturestart',stopNativeZoom,{passive:false});
+    document.addEventListener('gesturechange',stopNativeZoom,{passive:false});
+    return()=>{
+      cancelAnimationFrame(frame);pinchStart.current=null;
+      el.removeEventListener('touchstart',onTouchStart,true);
+      el.removeEventListener('touchmove',onTouchMove,true);
+      el.removeEventListener('touchend',onTouchEnd);
+      el.removeEventListener('touchcancel',onTouchEnd);
+      document.removeEventListener('touchstart',stopMultiTouch,true);
+      document.removeEventListener('touchmove',stopMultiTouch,true);
+      document.removeEventListener('gesturestart',stopNativeZoom);
+      document.removeEventListener('gesturechange',stopNativeZoom);
     };
-  }, [resource, zoom]);
+  }, [active]);
 
   function updateResource(fn: (r: Resource) => Resource) {
     setLib((l) => ({
@@ -497,7 +531,9 @@ function App() {
       ? visibleCommands(lesson.commands, lesson.index + (playing || progress > 0 ? 1 : 0))
       : [];
 
-  function preference(key: string, value: string | boolean) {
+  function openToolMenu(kind:'pen'|'eraser'){setTool(kind);setToolMenu(current=>current===kind?null:kind);}
+
+  function preference(key: string, value: string | boolean | number) {
     setLib((l) => ({ ...l, prefs: { ...l.prefs, [key]: value } }));
   }
 
@@ -794,7 +830,7 @@ function App() {
                     aria-label="تبديل حجم الورقة"
                     onClick={() => {setFitPage(v=>!v);setZoom(100)}}
                   >
-                    {zoom}%
+                    {Math.round(zoom)}%
                   </button>
                   <button
                     className="icon-btn"
@@ -847,20 +883,14 @@ function App() {
           )}
 
           {/* Full-screen paper area */}
-          <div className="paper-scroll book-scroll" ref={scrollRef} onPointerDownCapture={()=>setEraserMenu(false)}
+          <div className="paper-scroll book-scroll" ref={scrollRef} onPointerDownCapture={()=>setToolMenu(null)}
             onTouchStart={e=>{const t=e.touches[0] as Touch & {touchType?:string};swipeStart.current=e.touches.length===1&&t.touchType!=='stylus'&&tool!=='select'&&tool!=='text'?{x:t.clientX,y:t.clientY,time:Date.now()}:null;}}
             onTouchMove={e=>{if(e.touches.length!==1)swipeStart.current=null;}}
             onTouchCancel={()=>{swipeStart.current=null;}}
             onTouchEnd={e=>{const start=swipeStart.current;swipeStart.current=null;if(!start||e.touches.length)return;const t=e.changedTouches[0];if(!t)return;const delta=pageTurnGesture(start,{x:t.clientX,y:t.clientY,time:Date.now()},zoom);const next=page+delta;if(delta&&next>=0&&next<resource.pages.length)navigatePage(next);}}>
 
-            <div
-              className={'paper-stage book-stage '+(curlDriver?'is-hand-folding ':'')+(zoomGesture?'is-pinching':'')}
-              style={{
-                ...({'--page-zoom':zoom/100} as React.CSSProperties),
-                width: zoom === 100 ? '100%' : zoom + '%',
-                maxWidth: fitPage?`min(${860*zoom/100}px, max(180px, calc((100dvh - 240px) * ${(resource.pages[page].ratio||0.74)*zoom/100})))`:(860*zoom/100)+'px',
-              }}
-            >
+            <PaperZoom zoom={zoom} pinching={zoomGesture} immersive={fullscreen} fit={fitPage} ratio={resource.pages[page].ratio||0.74}>
+            <div className={'paper-stage book-stage '+(curlDriver?'is-hand-folding ':'')}>
               <button className="book-edge book-prev" aria-label="الورقة السابقة" title="الورقة السابقة" disabled={page===0} onClick={()=>navigatePage(page-1)}><ChevronLeft size={24}/></button>
               <button className="book-edge book-next" aria-label="الورقة التالية" title="الورقة التالية" disabled={page===resource.pages.length-1} onClick={()=>navigatePage(page+1)}><ChevronRight size={24}/></button>
               {viewPages.map((sheet,index)=>({sheet,index})).filter(({index})=>Math.abs(index-page)<=1).map(({sheet,index}) => {return (
@@ -871,6 +901,9 @@ function App() {
                     tool={tool}
                     color={color}
                     eraserMode={lib.prefs.eraserMode||'pixel'}
+                    eraserSize={lib.prefs.eraserSize??28}
+                    penWidth={lib.prefs.penSize??2.5}
+                    penSmoothing={lib.prefs.penSmoothing??.35}
                     onPage={next=>updatePage(next,index)}
                     commands={resource.lesson?.page===index?visibleCommands(resource.lesson.commands,resource.lesson.index+(playing||progress>0?1:0)):[]}
                     progress={playing||progress>0?progress:1}
@@ -888,12 +921,11 @@ function App() {
 
 
             </div>
+            </PaperZoom>
           </div>
 
           {/* Floating Drawing Toolbar */}
-          {fullscreen?<div className="floating-toolbar compact-tools" role="toolbar" aria-label="القلم والممحاة">
-            <button className="tool-btn" aria-label={tool==='eraser'?'استخدام القلم':'استخدام الممحاة'} title="اضغط للتبديل، أو اضغط مطولًا لاختيار نوع الممحاة" onPointerDown={()=>{heldTool.current=false;eraserHold.current=setTimeout(()=>{heldTool.current=true;setEraserMenu(true)},450)}} onPointerUp={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onPointerCancel={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onPointerLeave={()=>{if(eraserHold.current)clearTimeout(eraserHold.current)}} onContextMenu={e=>{e.preventDefault();setEraserMenu(v=>!v)}} onClick={()=>{if(heldTool.current){heldTool.current=false;return}setTool(tool==='eraser'?'pen':'eraser');setEraserMenu(false)}}>{tool==='eraser'?<PenLine size={22}/>:<Eraser size={22}/>}</button>
-          </div>:(<div className="floating-toolbar" role="toolbar" aria-label="Drawing tools">
+          {fullscreen?<FloatingToolButton tool={tool} menuOpen={!!toolMenu} onToggle={()=>{setTool(tool==='eraser'?'pen':'eraser');setToolMenu(null)}} chatOpen={chatOpen} onAI={()=>showChat()} onOptions={()=>openToolMenu(tool==='eraser'?'eraser':'pen')}/>:(<div className="floating-toolbar" role="toolbar" aria-label="Drawing tools">
             {[
               ['pen', PenLine, 'Pen'],
               ['eraser', Eraser, 'Eraser'],
@@ -906,11 +938,13 @@ function App() {
                 aria-label={label}
                 title={label}
                 className={'tool-btn ' + (tool === t ? 'active' : '')}
-                onClick={() => {if(t==='eraser'){setTool(t);setEraserMenu(v=>!v)}else{setTool(t);setEraserMenu(false)}}}
+                onClick={()=>{setTool(t);setToolMenu(null)}}
               >
                 <Icon size={17} />
               </button>
             ))}
+
+            <button className="tool-options-arrow toolbar-options-arrow" aria-label="خيارات الأداة" aria-expanded={!!toolMenu} onClick={()=>openToolMenu(tool==='eraser'?'eraser':'pen')}><ChevronDown size={13}/></button>
 
             <span className="toolbar-divider" />
 
@@ -945,7 +979,20 @@ function App() {
               <Undo2 size={17} />
             </button>
           </div>)}
-          {eraserMenu&&<div className="eraser-options" role="group" aria-label="نوع الممحاة"><button className={(lib.prefs.eraserMode||'pixel')==='pixel'?'selected':''} onClick={()=>{preference('eraserMode','pixel');setTool('eraser');setEraserMenu(false)}}><Eraser size={17}/><span>عادية<small>تمسح الجزء الذي تمر عليه</small></span></button><button className={lib.prefs.eraserMode==='stroke'?'selected':''} onClick={()=>{preference('eraserMode','stroke');setTool('eraser');setEraserMenu(false)}}><PenLine size={17}/><span>خط كامل<small>تمسح ضربة القلم كاملة</small></span></button></div>}
+          {toolMenu&&<div className="drawing-options" role="dialog" aria-label={toolMenu==='pen'?'إعدادات القلم':'إعدادات الممحاة'} dir="rtl">
+            <div className="drawing-options-heading"><strong>{toolMenu==='pen'?'القلم':'الممحاة'}</strong><button aria-label="إغلاق إعدادات الأداة" onClick={()=>setToolMenu(null)}><X size={17}/></button></div>
+            {toolMenu==='pen'?<>
+              <label>الحجم <output>{lib.prefs.penSize??2.5}</output><input aria-label="حجم القلم" type="range" min=".5" max="10" step=".5" value={lib.prefs.penSize??2.5} onChange={e=>preference('penSize',+e.target.value)}/></label>
+              <div className="drawing-colors"><span>اللون</span>{INK_COLORS.map(c=><button key={c} aria-label={'لون القلم '+c} aria-pressed={color===c} className={'color-dot '+(color===c?'active':'')} style={{background:c}} onClick={()=>setColor(c)}/>)}<input aria-label="لون مخصص للقلم" type="color" value={color} onChange={e=>setColor(e.target.value)}/></div>
+              <label>السلاسة <output>{Math.round((lib.prefs.penSmoothing??.35)*100)}%</output><input aria-label="سلاسة القلم" type="range" min="0" max="1" step=".05" value={lib.prefs.penSmoothing??.35} onChange={e=>preference('penSmoothing',+e.target.value)}/></label>
+              <small>أقل: يتبع تعرّج يدك · أعلى: ينعّم الخط أكثر</small>
+              <svg className="pen-settings-preview" viewBox="0 0 260 48" aria-label="معاينة القلم"><path d={inkPath([[10,30],[25,24],[40,32],[55,13],[70,25],[85,9],[100,22],[115,34],[130,18],[145,29],[160,10],[175,23],[190,14],[205,30],[220,22],[245,27]],lib.prefs.penSmoothing??.35)} fill="none" stroke={color} strokeWidth={lib.prefs.penSize??2.5} strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </>:<>
+              <label>الحجم <output>{lib.prefs.eraserSize??28}</output><input aria-label="حجم الممحاة" type="range" min="8" max="100" step="2" value={lib.prefs.eraserSize??28} onChange={e=>preference('eraserSize',+e.target.value)}/></label>
+              <div className="eraser-type-options">{(['pixel','stroke'] as const).map(mode=><button key={mode} className={(lib.prefs.eraserMode||'pixel')===mode?'selected':''} aria-pressed={(lib.prefs.eraserMode||'pixel')===mode} onClick={()=>preference('eraserMode',mode)}>{mode==='pixel'?'عادية':'خط كامل'}<small>{mode==='pixel'?'تمسح الجزء الذي تمر عليه':'تمسح ضربة القلم كاملة'}</small></button>)}</div>
+            </>}
+          </div>}
+
 
           {/* Floating Lesson Playback Bar (only when an AI lesson is active) */}
           {lesson && (
@@ -1006,7 +1053,7 @@ function App() {
             </div>
           )}
 
-          {!chatOpen&&!chatHidden&&<FloatingChatButton active={ai} onOpen={()=>showChat()} onHide={hideChat}/>}
+          {!fullscreen&&!chatOpen&&!chatHidden&&<FloatingChatButton active={ai} onOpen={()=>showChat()} onHide={hideChat}/>}
 
           {/* Compact / Expandable Floating AI Panel (never resizes the document) */}
           {chatOpen && (
@@ -1357,10 +1404,22 @@ function App() {
             </section>
 
             <section className="settings-section icloud-settings" dir="rtl">
-              <h3>iCloud Drive — الحفظ التلقائي</h3>
-              <p className="settings-note">نسخة احتياطية للدفاتر والملفات والكتابة والمحادثات في مجلد iCloud Drive على هذا الماك. مفتاح Gemini لا يدخل في النسخة. تعمل أثناء تشغيل الخادم المحلي؛ رفع الملف لأجهزة Apple الأخرى تتولاه مزامنة iCloud.</p>
+              <h3>iCloud — مزامنة الأجهزة</h3>
+              <p className="settings-note">سجّل بنفس حساب Apple على كل جهاز لمزامنة الدفاتر والكتابة والمحادثات. يتم الحفظ بعد التعديل، وفحص التغييرات عند الرجوع للتطبيق وكل 30 ثانية أثناء فتحه.</p>
+              {!cloudKitConfigured?<p className="icloud-status">الربط لم يُفعّل بعد: يلزم Container ID وWeb API Token من CloudKit الخاص بالتطبيق.</p>:<>
+                <button className="btn-secondary" disabled={['connecting','sign-in','syncing'].includes(cloudSync.state)} onClick={()=>void cloudSync.connect()}>ربط حساب iCloud</button>
+                <div id="margin-apple-sign-in"/><div id="margin-apple-sign-out"/>
+                <p className={'icloud-status '+cloudSync.state} role="status">{cloudSync.state==='synced'?'الدفاتر متزامنة مع iCloud':cloudSync.state==='conflict'?'توجد نسختان مختلفتان. لم يتم استبدال أي منهما.':cloudSync.state==='syncing'?'جارٍ مزامنة الدفاتر…':cloudSync.state==='sign-in'?'سجّل الدخول من زر Apple':cloudSync.state==='connecting'?'جارٍ الاتصال بـ Apple…':'المزامنة غير متصلة'}</p>
+                {cloudSync.error&&<p className="icloud-error">{cloudSync.error}</p>}
+                {cloudSync.state==='conflict'?<button className="btn-secondary" onClick={async()=>{if(await download())await cloudSync.useCloud()}}>تنزيل نسخة محلية ثم فتح دفاتر iCloud</button>:<button className="btn-secondary" disabled={cloudSync.state!=='synced'&&cloudSync.state!=='error'} onClick={()=>void cloudSync.sync()}>مزامنة الآن</button>}
+              </>}
+            </section>
+
+            <section className="settings-section icloud-settings" dir="rtl">
+              <h3>iCloud Drive — نسخة احتياطية على الماك</h3>
+              <p className="settings-note">نسخة احتياطية للدفاتر والملفات والكتابة والمحادثات في مجلد iCloud Drive على هذا الماك. مفتاح Gemini لا يدخل في النسخة. تعمل على الماك أثناء تشغيل الخادم المحلي. هذه نسخة احتياطية وليست مزامنة تلقائية بين متصفحات الجوال واللابتوب. على الجوال: استورد ملف Margin/library.json من تطبيق الملفات ← iCloud Drive.</p>
               <label className="icloud-switch"><input type="checkbox" checked={cloud.enabled} disabled={!cloud.info} onChange={e=>preference('icloudBackup',e.target.checked)}/> حفظ تلقائي بعد التعديلات</label>
-              <div className={'icloud-status '+cloud.state} role="status">{cloud.state==='checking'?'جارٍ فحص iCloud Drive…':cloud.state==='unavailable'?'iCloud Drive غير متاح للنسخة المحلية حاليًا':cloud.state==='restore-first'?'توجد نسخة iCloud أحدث أو أن المكتبة المحلية فارغة. استعد النسخة قبل المتابعة لتجنب استبدالها.':cloud.state==='saving'?'جارٍ الكتابة إلى مجلد iCloud Drive…':cloud.state==='error'?'تعذر النسخ الاحتياطي. الملاحظات ما زالت محفوظة محليًا.':cloud.state==='saved'?'حُفظت النسخة في مجلد iCloud Drive على الماك':cloud.enabled?'الحفظ التلقائي جاهز':'الحفظ التلقائي متوقف'}</div>
+              <div className={'icloud-status '+cloud.state} role="status">{cloud.state==='checking'?'جارٍ فحص iCloud Drive…':cloud.state==='unavailable'?'النسخ الاحتياطي المباشر متاح على localhost في الماك فقط. بيانات هذا المتصفح مستقلة؛ يمكنك استيراد نسخة iCloud من قسم النسخ الاحتياطي.':cloud.state==='restore-first'?'توجد نسخة iCloud أحدث. استعد النسخة قبل المتابعة لتجنب استبدالها.':cloud.state==='saving'?'جارٍ الكتابة إلى مجلد iCloud Drive…':cloud.state==='error'?'تعذر النسخ الاحتياطي. الملاحظات ما زالت محفوظة محليًا.':cloud.state==='saved'?'حُفظت النسخة في مجلد iCloud Drive على الماك':cloud.enabled?'الحفظ التلقائي جاهز':'الحفظ التلقائي متوقف'}</div>
               {cloud.info?.savedAt&&<p className="settings-note">آخر ملف محفوظ: {new Date(cloud.info.savedAt).toLocaleString()}<br/>{cloud.info.folder}</p>}
               {cloud.error&&<p className="icloud-error">{cloud.error}</p>}
               <div className="backup-actions">

@@ -6,3 +6,5 @@ dist/
 *.log
 
 *.tsbuildinfo
+
+!.env.example

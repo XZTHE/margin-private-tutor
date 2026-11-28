@@ -4,6 +4,7 @@ export type Stroke = {
     points: number[][];
     color: string;
     width: number;
+    smoothing?: number;
 };
 export type Command = {
     type: 'write_text' | 'write_equation' | 'draw_line' | 'draw_arrow' | 'draw_shape' | 'highlight_region' | 'circle_region' | 'erase_element' | 'explain_step';
@@ -49,6 +50,10 @@ export type Prefs = {
     ui?: string;
     icloudBackup?: boolean;
     eraserMode?: 'pixel'|'stroke';
+    eraserSize?: number;
+    penSize?: number;
+    penColor?: string;
+    penSmoothing?: number;
     endpoint: string;
     geminiModel?: string;
     conversation: string;

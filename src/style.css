@@ -638,8 +638,8 @@ p {
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Finger scroll & pinch-zoom allowed; Apple Pencil is intercepted by non-passive touch listeners */
-  touch-action: pan-x pan-y pinch-zoom;
+  /* Native finger scrolling; the workspace handles paper-only pinch zoom. */
+  touch-action: pan-x pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -1450,12 +1450,41 @@ p {
 .workspace-shell.immersive .book-prev{left:8px}.workspace-shell.immersive .book-next{right:8px}
 .paper-corner-add svg{position:absolute;right:11px;bottom:11px;color:#6a7787;pointer-events:none}
 @media(max-width:600px){.paper-corner-add svg{right:8px;bottom:8px}}
-/* Buttons animate the paper size; a live pinch always follows the fingers directly. */
+/* A fixed-layout sheet scales as one surface, without reflowing its contents. */
 .book-scroll{display:block}
-.book-stage{transition:width 260ms cubic-bezier(.2,.75,.25,1),max-width 260ms cubic-bezier(.2,.75,.25,1)}
-.workspace-shell.immersive .book-stage{width:calc(100% * var(--page-zoom,1))!important}
-.workspace-shell.notes-workspace.immersive .paper{height:calc(100dvh * var(--page-zoom,1));transition:height 260ms cubic-bezier(.2,.75,.25,1)}
-.workspace-shell.notes-workspace.immersive .book-grab-handles{height:calc(100dvh * var(--page-zoom,1));transition:height 260ms cubic-bezier(.2,.75,.25,1)}
-.book-stage.is-pinching,.book-stage.is-pinching .paper,.book-stage.is-pinching .book-grab-handles{transition:none!important}
-@media(prefers-reduced-motion:reduce){.book-stage,.workspace-shell.notes-workspace.immersive .paper,.workspace-shell.notes-workspace.immersive .book-grab-handles{transition:none}}
-.workspace-shell.immersive .book-stage{margin:0 auto}
+.book-stage,.workspace-shell.immersive .book-stage{width:100%!important;max-width:none!important;margin:0;transition:none}
+.workspace-shell.notes-workspace.immersive .paper,.workspace-shell.notes-workspace.immersive .book-grab-handles{height:100dvh;transition:none}
+.paper-zoom-frame{position:relative;margin:0 auto;flex-shrink:0;transition:width 260ms cubic-bezier(.2,.75,.25,1),height 260ms cubic-bezier(.2,.75,.25,1)}
+.paper-zoom-content{position:absolute;left:0;top:0;transform-origin:top left;transition:transform 260ms cubic-bezier(.2,.75,.25,1);will-change:transform}
+.paper-zoom-frame.is-pinching,.is-pinching .paper-zoom-content{transition:none}
+@media(prefers-reduced-motion:reduce){.paper-zoom-frame,.paper-zoom-content{transition:none}}
+/* The ruling belongs to the sheet coordinate system, just like the SVG ink. */
+.book-stage .paper{container-type:inline-size}
+.book-stage .ruled{padding:0;background-color:#fffefa;background-image:linear-gradient(90deg,transparent 7.55814cqw,#df9c9c77 7.55814cqw,#df9c9c77 7.67442cqw,transparent 7.67442cqw),repeating-linear-gradient(transparent 0,transparent 3.83721cqw,#abc7dc60 3.95349cqw,transparent 4.06977cqw)}
+.book-scroll{touch-action:pan-x pan-y;overscroll-behavior:contain}
+
+.drawing-options{position:fixed;bottom:86px;left:50%;transform:translateX(-50%);z-index:32;width:min(330px,calc(100vw - 24px));max-height:calc(100dvh - 110px);overflow:auto;padding:16px;background:#fffffff5;border:1px solid #dce2e8;border-radius:18px;box-shadow:0 7px 25px #28384a22;backdrop-filter:blur(14px);font-size:13px}
+.drawing-options-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.drawing-options-heading button{padding:6px;border-radius:50%}
+.drawing-options label{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px}.drawing-options output{margin-inline-start:auto;color:#64748b;font-variant-numeric:tabular-nums}.drawing-options input[type=range]{width:100%;accent-color:#507d9d;touch-action:pan-x;direction:ltr}.drawing-options small{display:block;color:#7c8795;font-size:11px;margin-top:6px;line-height:1.6}
+.drawing-colors{display:flex;gap:12px;align-items:center;margin-top:18px;flex-wrap:wrap}.drawing-colors>span{width:100%}.drawing-colors input[type=color]{width:28px;height:28px;padding:0;border:0;border-radius:50%;background:transparent}
+.eraser-type-options{display:flex;gap:8px;margin-top:16px}.eraser-type-options button{flex:1;padding:12px 8px;border-radius:10px;border:1px solid #e0e5eb}.eraser-type-options button.selected{background:#e8f0f8;color:#285b90;border-color:#a7c5e0}.pen-settings-preview{width:100%;height:60px;background:#f7f6f1;border-radius:10px;margin-top:12px}
+.floating-toolbar .tool-btn{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+
+/* Interface holds open tool menus; only paper content and editable fields select text. */
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.paper .paper-content,.paper .paper-content *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.paper .pdf-text-layer:not(.enabled),.paper .pdf-text-layer:not(.enabled) *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea,[contenteditable=true],input *,textarea *,[contenteditable=true] *{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+input[type=range],input[type=color]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+.floating-toolbar.compact-tools.movable-tool-orb{left:0;top:0;bottom:auto;width:72px;min-width:72px;height:54px;padding:5px;border-radius:28px;gap:0;transform:translate3d(0,0,0);transition:transform 300ms cubic-bezier(.2,1.35,.35,1),box-shadow 180ms;will-change:transform;touch-action:none}
+.movable-tool-orb.is-dragging{transition:none;box-shadow:0 10px 30px #28384a30}
+.movable-tool-orb .tool-btn{touch-action:none!important;cursor:grab}.movable-tool-orb.is-dragging .tool-btn{cursor:grabbing}
+.tool-options-arrow{display:inline-flex;align-items:center;justify-content:center;width:22px;height:32px;min-width:22px;padding:0;border-radius:14px;color:#6b7785;touch-action:manipulation}
+.tool-options-arrow:hover,.tool-options-arrow[aria-expanded=true]{background:#e8edf3;color:#385c7c}
+.toolbar-options-arrow{width:24px;margin-inline-start:-5px}
+@media(prefers-reduced-motion:reduce){.floating-toolbar.compact-tools.movable-tool-orb{transition:none}}
+
+.floating-toolbar.compact-tools.movable-tool-orb{width:102px;min-width:102px}
+.tool-orb-ai{width:30px;min-width:30px;height:36px;padding:0;border-radius:18px;color:#667d96;touch-action:manipulation}
+.tool-orb-ai:hover,.tool-orb-ai[aria-expanded=true]{background:#e8edf3;color:#385c7c}
